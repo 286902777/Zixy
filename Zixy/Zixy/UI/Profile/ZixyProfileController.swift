@@ -128,12 +128,18 @@ final class ZixyProfileController: ZixyScreenController,
             }
             if title == "Edit Profile" {
                 push(ZixyEditProfileController())
+            } else if title == "My Room" {
+                push(ZixyMyRoomController(mode: ZixyMyRoomController.currentMode))
             } else if title == "Following" {
                 push(ZixyFollowingController())
             } else if title == "Followers" {
                 push(ZixyFollowersController())
             } else if title == "Blacklist" {
                 push(ZixyBlacklistController())
+            } else if title == "Setting" {
+                push(ZixySettingsController())
+            } else if title == "Recharge" {
+                push(ZixyRechargeController())
             } else {
                 showToast("\(title) is coming soon.")
             }
@@ -510,7 +516,7 @@ private final class ZixyProfileSettingRow: UIControl {
     }
 }
 
-private final class ZixyProfilePostCell: UICollectionViewCell {
+final class ZixyProfilePostCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyProfilePostCell"
 
@@ -620,13 +626,32 @@ private final class ZixyMasonryLayout: UICollectionViewLayout {
 
     weak var delegate: ZixyMasonryLayoutDelegate?
 
+    private static let panelDecorationKind =
+        "ZixyProfilePanelDecorationView"
     private let columnCount = 2
     private let horizontalInset: CGFloat = 11
     private let spacing: CGFloat = 10
-    private let headerHeight: CGFloat = 430
+    private let headerHeight: CGFloat = 448
+    private let panelTop: CGFloat = 177
     private let textAreaHeight: CGFloat = 58
     private var attributes: [UICollectionViewLayoutAttributes] = []
     private var contentHeight: CGFloat = 0
+
+    override init() {
+        super.init()
+        register(
+            ZixyProfilePanelDecorationView.self,
+            forDecorationViewOfKind: Self.panelDecorationKind
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        register(
+            ZixyProfilePanelDecorationView.self,
+            forDecorationViewOfKind: Self.panelDecorationKind
+        )
+    }
 
     override var collectionViewContentSize: CGSize {
         CGSize(
@@ -691,6 +716,19 @@ private final class ZixyMasonryLayout: UICollectionViewLayout {
             columnHeights[column] = itemAttributes.frame.maxY
         }
         contentHeight = (columnHeights.max() ?? headerHeight) + spacing
+
+        let panel = UICollectionViewLayoutAttributes(
+            forDecorationViewOfKind: Self.panelDecorationKind,
+            with: IndexPath(item: 0, section: 0)
+        )
+        panel.frame = CGRect(
+            x: 0,
+            y: panelTop,
+            width: collectionView.bounds.width,
+            height: max(0, contentHeight - panelTop)
+        )
+        panel.zIndex = -1
+        attributes.append(panel)
     }
 
     override func layoutAttributesForElements(
@@ -715,9 +753,66 @@ private final class ZixyMasonryLayout: UICollectionViewLayout {
         }
     }
 
+    override func layoutAttributesForDecorationView(
+        ofKind elementKind: String,
+        at indexPath: IndexPath
+    ) -> UICollectionViewLayoutAttributes? {
+        attributes.first {
+            $0.indexPath == indexPath
+                && $0.representedElementKind == elementKind
+        }
+    }
+
     override func shouldInvalidateLayout(
         forBoundsChange newBounds: CGRect
     ) -> Bool {
         newBounds.width != collectionView?.bounds.width
+    }
+}
+
+private final class ZixyProfilePanelDecorationView:
+    UICollectionReusableView {
+
+    private let gradientLayer = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        gradientLayer.colors = [
+            UIColor(
+                red: 235 / 255,
+                green: 248 / 255,
+                blue: 1,
+                alpha: 1
+            ).cgColor,
+            UIColor(
+                red: 1,
+                green: 249 / 255,
+                blue: 253 / 255,
+                alpha: 1
+            ).cgColor,
+            UIColor.white.cgColor
+        ]
+        gradientLayer.locations = [0, 0.42, 1]
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 1)
+        layer.insertSublayer(gradientLayer, at: 0)
+        layer.cornerRadius = 28
+        layer.maskedCorners = [
+            .layerMinXMinYCorner,
+            .layerMaxXMinYCorner
+        ]
+        layer.masksToBounds = true
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
     }
 }

@@ -107,6 +107,17 @@ extension ZixyRoomGridPageController:
             height: width / Layout.cardAspectRatio
         )
     }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didSelectItemAt indexPath: IndexPath
+    ) {
+        let controller = ZixyRoomDetailController(
+            roomTitle: roomTitles[indexPath.item]
+        )
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
+    }
 }
 
 private final class ZixyRoomCardCell: UICollectionViewCell {

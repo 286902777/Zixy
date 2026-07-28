@@ -1,0 +1,8 @@
+{
+  "images" : [
+    { "filename" : "zixy_room_gift.png", "idiom" : "universal", "scale" : "1x" },
+    { "filename" : "zixy_room_gift@2x.png", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "zixy_room_gift@3x.png", "idiom" : "universal", "scale" : "3x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}

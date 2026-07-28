@@ -22,8 +22,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
 
-        let rootController: UIViewController = ZixySessionStore.isAuthenticated
-            ? ZixyMainContainerController()
+        let rootController: UIViewController = ZixySessionStore.hasActiveSession
+            ? ZixyMainContainerController(isGuest: ZixySessionStore.isGuest)
             : makeZixyAccessCoordinator()
 
         if window == nil {
@@ -38,7 +38,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func makeZixyAccessCoordinator() -> ZixyAccessCoordinator {
         let controller = ZixyAccessCoordinator()
         controller.onAuthenticated = { [weak self] in
-            self?.showMainInterface()
+            self?.showMainInterface(asGuest: false)
+        }
+        controller.onGuestAccess = { [weak self] in
+            self?.showMainInterface(asGuest: true)
         }
         return controller
     }
@@ -66,12 +69,31 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    private func showMainInterface() {
+    private func showMainInterface(asGuest: Bool) {
         guard let window else {
             return
         }
-        ZixySessionStore.markAuthenticated()
-        let controller = ZixyMainContainerController()
+        if asGuest {
+            ZixySessionStore.markGuest()
+        } else {
+            ZixySessionStore.markAuthenticated()
+        }
+        let controller = ZixyMainContainerController(isGuest: asGuest)
+        UIView.transition(
+            with: window,
+            duration: 0.3,
+            options: [.transitionCrossDissolve],
+            animations: {
+                window.rootViewController = controller
+            }
+        )
+    }
+
+    func showAuthenticationInterface() {
+        guard let window else {
+            return
+        }
+        let controller = makeZixyAccessCoordinator()
         UIView.transition(
             with: window,
             duration: 0.3,

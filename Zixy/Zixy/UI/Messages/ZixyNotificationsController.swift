@@ -100,6 +100,13 @@ final class ZixyNotificationsController: ZixyScreenController,
             avatar: item.avatar,
             postImage: item.postImage
         )
+        cell.onAvatarTapped = { [weak self] in
+            self?.pushZixyOtherProfile(
+                name: item.name,
+                image: item.avatar,
+                isCurrentUser: false
+            )
+        }
         return cell
     }
 
@@ -124,6 +131,8 @@ private final class ZixyNotificationCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyNotificationCell"
 
+    var onAvatarTapped: (() -> Void)?
+
     private let avatarView = UIImageView()
     private let nameLabel = UILabel()
     private let messageLabel = UILabel()
@@ -136,6 +145,11 @@ private final class ZixyNotificationCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onAvatarTapped = nil
     }
 
     func configure(
@@ -165,6 +179,11 @@ private final class ZixyNotificationCell: UICollectionViewCell {
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 25
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.font = ZixyFontBook.bold(size: 18, relativeTo: .headline)
@@ -230,5 +249,9 @@ private final class ZixyNotificationCell: UICollectionViewCell {
                 constant: -10
             )
         ])
+    }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
     }
 }

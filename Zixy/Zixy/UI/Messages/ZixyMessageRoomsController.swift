@@ -78,6 +78,17 @@ final class ZixyMessageRoomsController: UIViewController,
         let width = floor((collectionView.bounds.width - 34) / 2)
         return CGSize(width: width, height: 205)
     }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didSelectItemAt indexPath: IndexPath
+    ) {
+        let controller = ZixyRoomDetailController(
+            roomTitle: roomTitles[indexPath.item]
+        )
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
+    }
 }
 
 private final class ZixyMessageRoomCell: UICollectionViewCell {

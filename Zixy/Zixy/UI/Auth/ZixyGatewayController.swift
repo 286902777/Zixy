@@ -1,9 +1,10 @@
 import UIKit
 
-final class ZixyGatewayController: ZixyAuthCanvasController {
+final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate {
 
     var onLoginByEmail: (() -> Void)?
-    var onNewUser: (() -> Void)?
+    var onGuestAccess: (() -> Void)?
+    var onSignUp: (() -> Void)?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -68,24 +69,12 @@ final class ZixyGatewayController: ZixyAuthCanvasController {
         accountButton.accessibilityLabel = "Sign up"
         accountButton.addTarget(
             self,
-            action: #selector(newUser),
+            action: #selector(signUp),
             for: .touchUpInside
         )
 
-        let termsButton = UIButton(type: .custom)
+        let termsButton = TermsSelectionButton()
         termsButton.translatesAutoresizingMaskIntoConstraints = false
-        termsButton.setImage(
-            ZixyImageLibrary.termsCheckboxUnselected?.withRenderingMode(.alwaysOriginal),
-            for: .normal
-        )
-        termsButton.setImage(
-            UIImage(systemName: "checkmark.circle.fill")?.withTintColor(
-                .white,
-                renderingMode: .alwaysOriginal
-            ),
-            for: .selected
-        )
-        termsButton.imageView?.contentMode = .center
         termsButton.accessibilityLabel = "Accept terms"
         termsButton.addTarget(
             self,
@@ -93,12 +82,22 @@ final class ZixyGatewayController: ZixyAuthCanvasController {
             for: .touchUpInside
         )
 
-        let termsLabel = UILabel()
+        let termsLabel = UITextView()
+        termsLabel.translatesAutoresizingMaskIntoConstraints = false
         termsLabel.attributedText = makeTermsTitle()
-        termsLabel.numberOfLines = 2
+        termsLabel.backgroundColor = .clear
         termsLabel.textAlignment = .center
-        termsLabel.adjustsFontSizeToFitWidth = true
-        termsLabel.minimumScaleFactor = 0.8
+        termsLabel.isEditable = false
+        termsLabel.isScrollEnabled = false
+        termsLabel.isSelectable = true
+        termsLabel.delegate = self
+        termsLabel.textContainerInset = .zero
+        termsLabel.textContainer.lineFragmentPadding = 0
+        termsLabel.linkTextAttributes = [
+            .foregroundColor: UIColor.systemBlue,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        termsLabel.accessibilityLabel = "User Agreement and Privacy Policy"
 
         let termsRow = UIStackView(arrangedSubviews: [termsButton, termsLabel])
         termsRow.translatesAutoresizingMaskIntoConstraints = false
@@ -221,17 +220,41 @@ final class ZixyGatewayController: ZixyAuthCanvasController {
                 )
             ]
         )
-        ["Terms of Service", "Privacy Policy"].forEach { linkText in
-            let range = (text as NSString).range(of: linkText)
-            title.addAttributes(
-                [
-                    .foregroundColor: UIColor.systemBlue,
-                    .underlineStyle: NSUnderlineStyle.single.rawValue
-                ],
-                range: range
-            )
-        }
+        let agreementRange = (text as NSString).range(of: "Terms of Service")
+        title.addAttribute(
+            .link,
+            value: "zixy://user-agreement",
+            range: agreementRange
+        )
+        let privacyRange = (text as NSString).range(of: "Privacy Policy")
+        title.addAttribute(
+            .link,
+            value: "zixy://privacy-policy",
+            range: privacyRange
+        )
         return title
+    }
+
+    func textView(
+        _ textView: UITextView,
+        shouldInteractWith URL: URL,
+        in characterRange: NSRange,
+        interaction: UITextItemInteraction
+    ) -> Bool {
+        let page: ZixyWebController.H5Page
+        switch URL.host {
+        case "user-agreement":
+            page = .userAgreement
+        case "privacy-policy":
+            page = .privacyPolicy
+        default:
+            return false
+        }
+        navigationController?.pushViewController(
+            ZixyWebController(page: page),
+            animated: true
+        )
+        return false
     }
 
     @objc private func loginByEmail() {
@@ -239,12 +262,60 @@ final class ZixyGatewayController: ZixyAuthCanvasController {
     }
 
     @objc private func newUser() {
-        onNewUser?()
+        onGuestAccess?()
+    }
+
+    @objc private func signUp() {
+        onSignUp?()
     }
 
     @objc private func toggleTerms(_ sender: UIButton) {
         sender.isSelected.toggle()
         sender.accessibilityValue = sender.isSelected ? "Selected" : "Not selected"
+    }
+}
+
+private final class TermsSelectionButton: UIButton {
+
+    private let centerFillView = UIView()
+
+    override var isSelected: Bool {
+        didSet {
+            centerFillView.isHidden = !isSelected
+        }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        setImage(
+            ZixyImageLibrary.termsCheckboxUnselected?.withRenderingMode(
+                .alwaysOriginal
+            ),
+            for: .normal
+        )
+        imageView?.contentMode = .center
+
+        centerFillView.translatesAutoresizingMaskIntoConstraints = false
+        centerFillView.backgroundColor = UIColor(
+            red: 18 / 255,
+            green: 102 / 255,
+            blue: 1,
+            alpha: 1
+        )
+        centerFillView.layer.cornerRadius = 3
+        centerFillView.isHidden = true
+        centerFillView.isUserInteractionEnabled = false
+        insertSubview(centerFillView, at: 0)
+        NSLayoutConstraint.activate([
+            centerFillView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            centerFillView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            centerFillView.widthAnchor.constraint(equalToConstant: 6),
+            centerFillView.heightAnchor.constraint(equalTo: centerFillView.widthAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
     }
 }
 

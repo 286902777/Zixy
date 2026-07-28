@@ -45,7 +45,11 @@ final class ZixyDockBar: UIView {
     }
 
     func select(index: Int, sendsAction: Bool) {
-        guard items.indices.contains(index) else {
+        guard
+            items.indices.contains(index),
+            buttons.indices.contains(index),
+            buttons[index].isEnabled
+        else {
             return
         }
         selectedIndex = index
@@ -53,6 +57,16 @@ final class ZixyDockBar: UIView {
         if sendsAction {
             onSelectionChanged?(index)
         }
+    }
+
+    func setEnabled(_ enabled: Bool, at index: Int) {
+        guard buttons.indices.contains(index) else {
+            return
+        }
+        let button = buttons[index]
+        button.isEnabled = enabled
+        button.alpha = 1
+        button.accessibilityValue = enabled ? nil : "Sign in required"
     }
 
     private func configureView() {
@@ -86,6 +100,7 @@ final class ZixyDockBar: UIView {
     ) -> UIButton {
         let button = UIButton(type: .custom)
         button.tag = index
+        button.adjustsImageWhenDisabled = false
         button.accessibilityLabel = item.accessibilityLabel
         button.accessibilityTraits = .button
         button.addTarget(

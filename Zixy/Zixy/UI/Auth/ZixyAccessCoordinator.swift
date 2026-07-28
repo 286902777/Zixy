@@ -3,6 +3,7 @@ import UIKit
 final class ZixyAccessCoordinator: UINavigationController {
 
     var onAuthenticated: (() -> Void)?
+    var onGuestAccess: (() -> Void)?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,7 +18,10 @@ final class ZixyAccessCoordinator: UINavigationController {
         controller.onLoginByEmail = { [weak self] in
             self?.showLogin(mode: .signIn)
         }
-        controller.onNewUser = { [weak self] in
+        controller.onGuestAccess = { [weak self] in
+            self?.onGuestAccess?()
+        }
+        controller.onSignUp = { [weak self] in
             self?.showLogin(mode: .signUp)
         }
         setViewControllers([controller], animated: false)

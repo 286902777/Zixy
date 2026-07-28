@@ -159,6 +159,30 @@ the window root when the persisted session is authenticated; otherwise it must
 use `ZixyAccessCoordinator`. Logging out or removing the account must clear the
 persisted session before routing back to authentication.
 
+### Guest Access
+
+- Tapping `I'm new` on `ZixyGatewayController` starts a guest session. It must
+  not open Sign up or profile setup.
+- The separate `Sign up` link continues to open the registration flow.
+- Guest state must be persisted through `ZixySessionStore` independently from
+  authenticated user state.
+- `ZixyMainContainerController` remains the window root for a guest session,
+  but guests may view only the first tab and its content.
+- All four tab items must remain visible with their standard icon appearance
+  for a guest session. Tabs two through four remain disabled and must be
+  blocked at both the custom tab-bar control and container-selection levels so
+  guest access cannot bypass the disabled buttons.
+- Guest sessions are read-only for social interactions. Guests must not like
+  posts or comments, submit comments, follow or unfollow another user, or open
+  More actions.
+- More controls must be hidden for guests. Like, comment, and follow handlers
+  must check `ZixySessionStore.allowsSocialInteraction` before changing state,
+  even when the corresponding control is already disabled or hidden.
+- When a guest attempts an otherwise visible restricted interaction, keep the
+  underlying state unchanged and use a Toast prompting the guest to sign in.
+- Successful authentication must replace guest state. Logging out or removing
+  the account must clear both authenticated and guest session state.
+
 Each tab owns a hidden-system-bar `UINavigationController` so custom
 navigation, edge-swipe back, and child tab-bar hiding work independently per
 tab.

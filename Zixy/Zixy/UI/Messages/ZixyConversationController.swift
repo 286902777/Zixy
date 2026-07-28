@@ -3,6 +3,15 @@ import UIKit
 
 final class ZixyConversationController: UIViewController {
 
+    private enum Layout {
+        static let contentTop: CGFloat = 166
+        static let horizontalInset: CGFloat = 17
+        static let actionSpacing: CGFloat = 14
+        static let actionHeight: CGFloat = 34
+        static let composerHeight: CGFloat = 50
+        static let keyboardSpacing: CGFloat = 12
+    }
+
     private enum MessageKind {
         case timestamp
         case text
@@ -41,7 +50,7 @@ final class ZixyConversationController: UIViewController {
         Message(
             kind: .image,
             text: nil,
-            image: ZixyImageLibrary.profileAvatar,
+            image: ZixyImageLibrary.callBackground,
             isOutgoing: false
         )
     ]
@@ -59,6 +68,7 @@ final class ZixyConversationController: UIViewController {
             .layerMinXMinYCorner,
             .layerMaxXMinYCorner
         ]
+        view.clipsToBounds = true
         return view
     }()
     private let avatarView: UIImageView = {
@@ -121,43 +131,25 @@ final class ZixyConversationController: UIViewController {
         return view
     }()
     private let photoButton: UIButton = {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = "Photo"
-        configuration.image = UIImage(systemName: "photo.fill")
-        configuration.imagePadding = 9
-        configuration.baseForegroundColor = UIColor(
-            red: 82 / 255,
-            green: 126 / 255,
-            blue: 1,
-            alpha: 1
-        )
-        configuration.titleTextAttributesTransformer =
-            UIConfigurationTextAttributesTransformer { attributes in
-                var resolved = attributes
-                resolved.font = ZixyFontBook.bold(size: 14, relativeTo: .body)
-                return resolved
-            }
-        let button = UIButton(configuration: configuration)
+        let button = UIButton(type: .custom)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.backgroundColor = UIColor(
-            red: 246 / 255,
-            green: 247 / 255,
-            blue: 249 / 255,
-            alpha: 1
+        button.setImage(
+            ZixyImageLibrary.chatPhotoAction?.withRenderingMode(.alwaysOriginal),
+            for: .normal
         )
-        button.layer.cornerRadius = 11
-        button.contentHorizontalAlignment = .leading
+        button.imageView?.contentMode = .scaleAspectFit
         button.accessibilityLabel = "Choose photo"
-        let arrow = UIImageView(image: UIImage(systemName: "arrow.right"))
-        arrow.translatesAutoresizingMaskIntoConstraints = false
-        arrow.tintColor = configuration.baseForegroundColor
-        button.addSubview(arrow)
-        NSLayoutConstraint.activate([
-            arrow.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -10),
-            arrow.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            arrow.widthAnchor.constraint(equalToConstant: 19),
-            arrow.heightAnchor.constraint(equalToConstant: 16)
-        ])
+        return button
+    }()
+    private let videoCallButton: UIButton = {
+        let button = UIButton(type: .custom)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setImage(
+            ZixyImageLibrary.chatVideoCallAction?.withRenderingMode(.alwaysOriginal),
+            for: .normal
+        )
+        button.imageView?.contentMode = .scaleAspectFit
+        button.accessibilityLabel = "Start video call"
         return button
     }()
     private let inputContainer: UIView = {
@@ -235,13 +227,14 @@ final class ZixyConversationController: UIViewController {
         view.addSubview(moreButton)
         contentPanel.addSubview(collectionView)
         contentPanel.addSubview(photoButton)
+        contentPanel.addSubview(videoCallButton)
         contentPanel.addSubview(inputContainer)
         inputContainer.addSubview(messageField)
         inputContainer.addSubview(sendButton)
 
         let inputBottom = inputContainer.bottomAnchor.constraint(
             equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-            constant: -22
+            constant: 0
         )
         inputBottomConstraint = inputBottom
 
@@ -251,7 +244,10 @@ final class ZixyConversationController: UIViewController {
             backgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            contentPanel.topAnchor.constraint(equalTo: view.topAnchor, constant: 166),
+            contentPanel.topAnchor.constraint(
+                equalTo: view.topAnchor,
+                constant: Layout.contentTop
+            ),
             contentPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -305,23 +301,39 @@ final class ZixyConversationController: UIViewController {
                 constant: -8
             ),
 
-            photoButton.centerXAnchor.constraint(equalTo: contentPanel.centerXAnchor),
+            photoButton.leadingAnchor.constraint(
+                equalTo: contentPanel.leadingAnchor,
+                constant: Layout.horizontalInset
+            ),
             photoButton.bottomAnchor.constraint(
                 equalTo: inputContainer.topAnchor,
                 constant: -10
             ),
-            photoButton.widthAnchor.constraint(equalToConstant: 164),
-            photoButton.heightAnchor.constraint(equalToConstant: 36),
+            photoButton.heightAnchor.constraint(equalToConstant: Layout.actionHeight),
+
+            videoCallButton.leadingAnchor.constraint(
+                equalTo: photoButton.trailingAnchor,
+                constant: Layout.actionSpacing
+            ),
+            videoCallButton.trailingAnchor.constraint(
+                equalTo: contentPanel.trailingAnchor,
+                constant: -16
+            ),
+            videoCallButton.centerYAnchor.constraint(equalTo: photoButton.centerYAnchor),
+            videoCallButton.widthAnchor.constraint(equalTo: photoButton.widthAnchor),
+            videoCallButton.heightAnchor.constraint(equalTo: photoButton.heightAnchor),
 
             inputContainer.leadingAnchor.constraint(
                 equalTo: contentPanel.leadingAnchor,
-                constant: 17
+                constant: Layout.horizontalInset
             ),
             inputContainer.trailingAnchor.constraint(
                 equalTo: contentPanel.trailingAnchor,
                 constant: -16
             ),
-            inputContainer.heightAnchor.constraint(equalToConstant: 52),
+            inputContainer.heightAnchor.constraint(
+                equalToConstant: Layout.composerHeight
+            ),
             inputBottom,
 
             messageField.leadingAnchor.constraint(
@@ -356,14 +368,27 @@ final class ZixyConversationController: UIViewController {
             action: #selector(selectPhoto),
             for: .touchUpInside
         )
+        videoCallButton.addTarget(
+            self,
+            action: #selector(startVideoCall),
+            for: .touchUpInside
+        )
         sendButton.addTarget(
             self,
             action: #selector(sendMessage),
             for: .touchUpInside
         )
         messageField.delegate = self
+        avatarView.isUserInteractionEnabled = !isCurrentUser
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(
+                target: self,
+                action: #selector(openParticipantProfile)
+            )
+        )
 
-        if isCurrentUser {
+        if isCurrentUser || !ZixySessionStore.allowsSocialInteraction {
             moreButton.isHidden = true
         } else {
             moreButton.addTarget(
@@ -412,7 +437,9 @@ final class ZixyConversationController: UIViewController {
         let keyboardFrame = view.convert(frame, from: nil)
         let safeBottom = view.safeAreaLayoutGuide.layoutFrame.maxY
         let overlap = max(0, safeBottom - keyboardFrame.minY)
-        inputBottomConstraint?.constant = -(overlap + (overlap > 0 ? 12 : 22))
+        inputBottomConstraint?.constant = overlap > 0
+            ? -(overlap + Layout.keyboardSpacing)
+            : 0
 
         let duration = userInfo[
             UIResponder.keyboardAnimationDurationUserInfoKey
@@ -452,10 +479,43 @@ final class ZixyConversationController: UIViewController {
     }
 
     @objc private func showMoreActions() {
-        guard !isCurrentUser else {
+        guard
+            ZixySessionStore.allowsSocialInteraction,
+            !isCurrentUser
+        else {
             return
         }
-        showToast("More actions are available for this user.")
+
+        let controller = ZixyMoreActionsController(targetName: participantName)
+        controller.onReport = { [weak self] in
+            guard let self, !self.isCurrentUser else {
+                return
+            }
+            let reportController = ZixyReportController(
+                reportedUserName: self.participantName,
+                isCurrentUser: self.isCurrentUser
+            )
+            reportController.hidesBottomBarWhenPushed = true
+            self.navigationController?.pushViewController(
+                reportController,
+                animated: true
+            )
+        }
+        controller.onBlock = { [weak self] in
+            guard let self, !self.isCurrentUser else {
+                return
+            }
+            self.showToast("\(self.participantName) has been blocked.")
+        }
+        present(controller, animated: false)
+    }
+
+    @objc private func openParticipantProfile() {
+        pushZixyOtherProfile(
+            name: participantName,
+            image: participantImage,
+            isCurrentUser: isCurrentUser
+        )
     }
 
     @objc private func selectPhoto() {
@@ -466,6 +526,13 @@ final class ZixyConversationController: UIViewController {
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
         present(picker, animated: true)
+    }
+
+    @objc private func startVideoCall() {
+        view.endEditing(true)
+        let controller = ZixyVideoCallController(participantName: participantName)
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     @objc private func sendMessage() {
@@ -516,10 +583,15 @@ extension ZixyConversationController:
             cell?.configure(
                 text: message.text ?? "",
                 avatar: message.isOutgoing
-                    ? participantImage
-                    : ZixyImageLibrary.profileAvatar,
+                    ? ZixyImageLibrary.homeRoomPortrait
+                    : participantImage,
                 isOutgoing: message.isOutgoing
             )
+            cell?.onAvatarTapped = message.isOutgoing
+                ? nil
+                : { [weak self] in
+                    self?.openParticipantProfile()
+                }
             return cell ?? UICollectionViewCell()
         case .image:
             let cell = collectionView.dequeueReusableCell(
@@ -529,10 +601,15 @@ extension ZixyConversationController:
             cell?.configure(
                 image: message.image,
                 avatar: message.isOutgoing
-                    ? participantImage
-                    : ZixyImageLibrary.profileAvatar,
+                    ? ZixyImageLibrary.homeRoomPortrait
+                    : participantImage,
                 isOutgoing: message.isOutgoing
             )
+            cell?.onAvatarTapped = message.isOutgoing
+                ? nil
+                : { [weak self] in
+                    self?.openParticipantProfile()
+                }
             return cell ?? UICollectionViewCell()
         }
     }
@@ -643,6 +720,7 @@ private final class ZixyConversationTimeCell: UICollectionViewCell {
 private final class ZixyConversationTextCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyConversationTextCell"
+    var onAvatarTapped: (() -> Void)?
     private let avatarView = UIImageView()
     private let bubbleView = UIView()
     private let messageLabel = UILabel()
@@ -660,6 +738,11 @@ private final class ZixyConversationTextCell: UICollectionViewCell {
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 22
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
         bubbleView.backgroundColor = UIColor(
             red: 244 / 255,
             green: 246 / 255,
@@ -705,6 +788,7 @@ private final class ZixyConversationTextCell: UICollectionViewCell {
         super.prepareForReuse()
         NSLayoutConstraint.deactivate(directionalConstraints)
         directionalConstraints.removeAll()
+        onAvatarTapped = nil
     }
 
     func configure(text: String, avatar: UIImage?, isOutgoing: Bool) {
@@ -734,11 +818,16 @@ private final class ZixyConversationTextCell: UICollectionViewCell {
             ]
         NSLayoutConstraint.activate(directionalConstraints)
     }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
+    }
 }
 
 private final class ZixyConversationImageCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyConversationImageCell"
+    var onAvatarTapped: (() -> Void)?
     private let avatarView = UIImageView()
     private let messageImageView = UIImageView()
     private var directionalConstraints: [NSLayoutConstraint] = []
@@ -752,6 +841,11 @@ private final class ZixyConversationImageCell: UICollectionViewCell {
             contentView.addSubview($0)
         }
         avatarView.layer.cornerRadius = 22
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
         messageImageView.layer.cornerRadius = 8
         NSLayoutConstraint.activate([
             avatarView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
@@ -774,6 +868,7 @@ private final class ZixyConversationImageCell: UICollectionViewCell {
         super.prepareForReuse()
         NSLayoutConstraint.deactivate(directionalConstraints)
         directionalConstraints.removeAll()
+        onAvatarTapped = nil
     }
 
     func configure(image: UIImage?, avatar: UIImage?, isOutgoing: Bool) {
@@ -802,5 +897,9 @@ private final class ZixyConversationImageCell: UICollectionViewCell {
                 )
             ]
         NSLayoutConstraint.activate(directionalConstraints)
+    }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
     }
 }

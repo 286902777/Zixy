@@ -24,7 +24,7 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
     )
     private let birthdayField = ZixyAuthFieldView(
         title: "Birthday",
-        placeholder: "01/01/2003",
+        placeholder: "01/01/1990",
         titleSize: 16,
         textSize: 16,
         fieldHeight: 59,
@@ -33,7 +33,7 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
     )
     private let locationField = ZixyAuthFieldView(
         title: "Location",
-        placeholder: "LB",
+        placeholder: "NL",
         titleSize: 16,
         textSize: 16,
         fieldHeight: 59,
@@ -244,7 +244,7 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
     private func configureControlledInputs() {
         var birthdayComponents = DateComponents()
         birthdayComponents.calendar = Calendar(identifier: .gregorian)
-        birthdayComponents.year = 2003
+        birthdayComponents.year = 1990
         birthdayComponents.month = 1
         birthdayComponents.day = 1
 

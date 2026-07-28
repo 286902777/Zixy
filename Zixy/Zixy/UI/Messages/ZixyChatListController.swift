@@ -90,6 +90,13 @@ final class ZixyChatListController: UIViewController,
             name: item.name,
             message: item.message
         )
+        cell.onAvatarTapped = { [weak self] in
+            self?.pushZixyOtherProfile(
+                name: item.name,
+                image: item.image,
+                isCurrentUser: false
+            )
+        }
         return cell
     }
 
@@ -119,6 +126,8 @@ private final class ZixyChatCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyChatCell"
 
+    var onAvatarTapped: (() -> Void)?
+
     private let avatarView = UIImageView()
     private let nameLabel = UILabel()
     private let messageLabel = UILabel()
@@ -131,6 +140,11 @@ private final class ZixyChatCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        onAvatarTapped = nil
     }
 
     func configure(image: UIImage?, name: String, message: String) {
@@ -149,6 +163,11 @@ private final class ZixyChatCell: UICollectionViewCell {
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 27
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
 
         nameLabel.font = ZixyFontBook.bold(size: 18, relativeTo: .headline)
         nameLabel.textColor = UIColor(
@@ -194,5 +213,9 @@ private final class ZixyChatCell: UICollectionViewCell {
             ),
             timeLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor)
         ])
+    }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
     }
 }

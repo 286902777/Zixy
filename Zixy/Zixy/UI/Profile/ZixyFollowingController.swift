@@ -127,6 +127,13 @@ final class ZixyFollowingController: ZixyScreenController,
             }
             removeFollowing(at: currentIndexPath)
         }
+        cell.onAvatarTapped = { [weak self] in
+            self?.pushZixyOtherProfile(
+                name: item.name,
+                image: item.image,
+                isCurrentUser: item.isCurrentUser
+            )
+        }
         return cell
     }
 
@@ -164,6 +171,7 @@ final class ZixyMemberRemovalCell: UICollectionViewCell {
     static let reuseIdentifier = "ZixyMemberRemovalCell"
 
     var onRemove: (() -> Void)?
+    var onAvatarTapped: (() -> Void)?
 
     private let avatarView = UIImageView()
     private let nameLabel = UILabel()
@@ -181,6 +189,7 @@ final class ZixyMemberRemovalCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onRemove = nil
+        onAvatarTapped = nil
     }
 
     func configure(image: UIImage?, name: String, actionLabel: String) {
@@ -199,6 +208,11 @@ final class ZixyMemberRemovalCell: UICollectionViewCell {
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 25
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.font = ZixyFontBook.bold(size: 21, relativeTo: .title3)
@@ -246,6 +260,10 @@ final class ZixyMemberRemovalCell: UICollectionViewCell {
 
     @objc private func removeTapped() {
         onRemove?()
+    }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
     }
 }
 

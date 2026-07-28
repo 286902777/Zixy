@@ -2,12 +2,24 @@ import UIKit
 
 final class ZixyMainContainerController: UITabBarController {
 
+    private let isGuest: Bool
     private let zixyTabBar = ZixyDockBar()
     private var tabBarHeightConstraint: NSLayoutConstraint?
     private var isCustomTabBarHidden = false
 
+    init(isGuest: Bool = false) {
+        self.isGuest = isGuest
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        isGuest = false
+        super.init(coder: coder)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        delegate = self
         configureControllers()
         configureTabBar()
     }
@@ -24,7 +36,7 @@ final class ZixyMainContainerController: UITabBarController {
     private func configureControllers() {
         let roots: [UIViewController] = [
             ZixyHomeController(),
-            ZixyRoomsController(),
+            ZixyFeedController(),
             ZixyMessagesController(),
             ZixyProfileController()
         ]
@@ -71,7 +83,7 @@ final class ZixyMainContainerController: UITabBarController {
                 ZixyDockBar.Item(
                     normalImageName: "zixy_tab_rooms_normal",
                     selectedImageName: "zixy_tab_rooms_selected",
-                    accessibilityLabel: "Rooms"
+                    accessibilityLabel: "Feeds"
                 ),
                 ZixyDockBar.Item(
                     normalImageName: "zixy_tab_messages_normal",
@@ -85,12 +97,21 @@ final class ZixyMainContainerController: UITabBarController {
                 )
             ]
         )
+        if isGuest {
+            (1...3).forEach { index in
+                zixyTabBar.setEnabled(false, at: index)
+            }
+        }
 
         zixyTabBar.onSelectionChanged = { [weak self] index in
             guard let self else {
                 return
             }
-            selectedIndex = index
+            guard !isGuest || index == 0 else {
+                zixyTabBar.select(index: 0, sendsAction: false)
+                return
+            }
+            self.selectedIndex = index
             updateCustomTabBarVisibility(animated: false)
         }
     }
@@ -147,5 +168,18 @@ extension ZixyMainContainerController: UINavigationControllerDelegate {
             return
         }
         updateCustomTabBarVisibility(animated: animated)
+    }
+}
+
+extension ZixyMainContainerController: UITabBarControllerDelegate {
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        shouldSelect viewController: UIViewController
+    ) -> Bool {
+        guard isGuest else {
+            return true
+        }
+        return viewController === viewControllers?.first
     }
 }

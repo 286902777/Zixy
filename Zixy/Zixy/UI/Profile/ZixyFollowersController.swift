@@ -108,6 +108,13 @@ final class ZixyFollowersController: ZixyScreenController,
         cell.onFollow = { [weak self] in
             self?.toggleFollow(at: indexPath)
         }
+        cell.onAvatarTapped = { [weak self] in
+            self?.pushZixyOtherProfile(
+                name: follower.name,
+                image: follower.image,
+                isCurrentUser: false
+            )
+        }
         return cell
     }
 
@@ -137,6 +144,7 @@ private final class ZixyFollowerCell: UICollectionViewCell {
     static let reuseIdentifier = "ZixyFollowerCell"
 
     var onFollow: (() -> Void)?
+    var onAvatarTapped: (() -> Void)?
 
     private let avatarView = UIImageView()
     private let nameLabel = UILabel()
@@ -154,6 +162,7 @@ private final class ZixyFollowerCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onFollow = nil
+        onAvatarTapped = nil
     }
 
     func configure(image: UIImage?, name: String, isFollowed: Bool) {
@@ -183,6 +192,11 @@ private final class ZixyFollowerCell: UICollectionViewCell {
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 25
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(avatarTapped))
+        )
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.font = ZixyFontBook.bold(size: 21, relativeTo: .title3)
@@ -230,5 +244,9 @@ private final class ZixyFollowerCell: UICollectionViewCell {
 
     @objc private func followTapped() {
         onFollow?()
+    }
+
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
     }
 }

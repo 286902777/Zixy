@@ -127,6 +127,13 @@ final class ZixyBlacklistController: ZixyScreenController,
             }
             removeBlockedMember(at: currentIndexPath)
         }
+        cell.onAvatarTapped = { [weak self] in
+            self?.pushZixyOtherProfile(
+                name: item.name,
+                image: item.image,
+                isCurrentUser: item.isCurrentUser
+            )
+        }
         return cell
     }
 
