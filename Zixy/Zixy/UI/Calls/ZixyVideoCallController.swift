@@ -17,7 +17,7 @@ final class ZixyVideoCallController: UIViewController {
     }()
 
     private let blurView: UIVisualEffectView = {
-        let effect = UIBlurEffect(style: .systemMaterialDark)
+        let effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
         let view = UIVisualEffectView(effect: effect)
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isUserInteractionEnabled = false

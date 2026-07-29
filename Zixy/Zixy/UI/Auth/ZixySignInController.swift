@@ -7,8 +7,8 @@ final class ZixySignInController: ZixyAuthCanvasController {
         case signUp
     }
 
-    var onSignedIn: (() -> Void)?
-    var onRegistrationReady: (() -> Void)?
+    var onSignedIn: ((String) -> Void)?
+    var onRegistrationReady: ((String) -> Void)?
     var onForgotPassword: (() -> Void)?
 
     private let emailField = ZixyAuthFieldView(
@@ -302,9 +302,9 @@ final class ZixySignInController: ZixyAuthCanvasController {
                 showToast("Passwords do not match.")
                 return
             }
-            onRegistrationReady?()
+            onRegistrationReady?(email)
         } else {
-            onSignedIn?()
+            onSignedIn?(email)
         }
     }
 

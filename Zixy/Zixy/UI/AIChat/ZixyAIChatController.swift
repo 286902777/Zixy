@@ -9,6 +9,11 @@ final class ZixyAIChatController: UIViewController {
         static let initialMessageInset: CGFloat = 400
     }
 
+    private enum DailyLimit {
+        static let maximumMessages = 3
+        static let defaultsPrefix = "zixy_ai_chat_daily_usage"
+    }
+
     private enum MessageKind {
         case assistant
         case user
@@ -286,6 +291,10 @@ final class ZixyAIChatController: UIViewController {
         guard !isReplying else {
             return
         }
+        guard consumeDailyMessageAllowance() else {
+            showToast("Daily message limit reached. Try again tomorrow.")
+            return
+        }
 
         isReplying = true
         sendButton.isEnabled = false
@@ -304,6 +313,32 @@ final class ZixyAIChatController: UIViewController {
             let reply = responder.reply(to: text)
             finishReply(with: reply)
         }
+    }
+
+    private func consumeDailyMessageAllowance() -> Bool {
+        let identifierData = Data(
+            ZixySessionStore.currentUserIdentifier.utf8
+        )
+        let identifier = identifierData.base64EncodedString()
+        let keyPrefix = "\(DailyLimit.defaultsPrefix).\(identifier)"
+        let dayKey = "\(keyPrefix).day"
+        let countKey = "\(keyPrefix).count"
+        let defaults = UserDefaults.standard
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+            .timeIntervalSince1970
+        let storedDay = defaults.double(forKey: dayKey)
+
+        if storedDay != startOfToday {
+            defaults.set(startOfToday, forKey: dayKey)
+            defaults.set(0, forKey: countKey)
+        }
+
+        let sentCount = defaults.integer(forKey: countKey)
+        guard sentCount < DailyLimit.maximumMessages else {
+            return false
+        }
+        defaults.set(sentCount + 1, forKey: countKey)
+        return true
     }
 
     @objc private func navigateBack() {

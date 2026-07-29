@@ -124,6 +124,19 @@ Do not create separate controller classes solely for these visual states.
 - Use a toast for normal feedback, success, failure, and lightweight errors.
   Do not create a `UIAlertController` for those messages.
 
+## AI Chat Daily Limit
+
+- Each authenticated user may send at most three messages to
+  `ZixyAIChatController` per local calendar day. The quota must be keyed by the
+  normalized login identifier so accounts on the same device do not share a
+  count.
+- Guest access uses its own guest quota. Persist the date and count in
+  `UserDefaults`, restore them after relaunch, and reset the count when the
+  local calendar day changes.
+- Validate the quota immediately before appending the user message. The fourth
+  and later attempts must not change the conversation or request an AI reply
+  and must show a Toast explaining that the daily limit was reached.
+
 ## Asset Catalog Layout
 
 All application assets use the `zixy_` prefix and lowercase English

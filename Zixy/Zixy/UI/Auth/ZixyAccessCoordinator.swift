@@ -4,6 +4,7 @@ final class ZixyAccessCoordinator: UINavigationController {
 
     var onAuthenticated: (() -> Void)?
     var onGuestAccess: (() -> Void)?
+    private var pendingRegistrationIdentifier: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -29,10 +30,12 @@ final class ZixyAccessCoordinator: UINavigationController {
 
     private func showLogin(mode: ZixySignInController.Mode) {
         let controller = ZixySignInController(mode: mode)
-        controller.onSignedIn = { [weak self] in
+        controller.onSignedIn = { [weak self] identifier in
+            ZixySessionStore.setCurrentUserIdentifier(identifier)
             self?.onAuthenticated?()
         }
-        controller.onRegistrationReady = { [weak self] in
+        controller.onRegistrationReady = { [weak self] identifier in
+            self?.pendingRegistrationIdentifier = identifier
             self?.showProfileSetup()
         }
         controller.onForgotPassword = { [weak self] in
@@ -52,7 +55,14 @@ final class ZixyAccessCoordinator: UINavigationController {
     private func showProfileSetup() {
         let controller = ZixyProfileSetupController()
         controller.onCompleted = { [weak self] in
-            self?.onAuthenticated?()
+            guard let self else {
+                return
+            }
+            if let identifier = pendingRegistrationIdentifier {
+                ZixySessionStore.setCurrentUserIdentifier(identifier)
+            }
+            pendingRegistrationIdentifier = nil
+            onAuthenticated?()
         }
         pushViewController(controller, animated: true)
     }

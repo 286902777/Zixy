@@ -101,13 +101,11 @@ final class ZixyOtherProfileController: UIViewController {
     }()
 
     private let backButton = ZixyOtherProfileController.makeRoundButton(
-        image: UIImage(named: "ZixyImageLibrary.aiChatBackButton"),
+        image: UIImage(named: "zixy_ai_chat_back_button"),
         accessibilityLabel: "Back"
     )
-    private let followButton = ZixyOtherProfileController.makeRoundButton(
-        image: ZixyImageLibrary.otherProfileFollowIcon,
-        accessibilityLabel: "Follow"
-    )
+    private let followButton = UIButton()
+    
     private let moreButton = ZixyOtherProfileController.makeRoundButton(
         image: ZixyImageLibrary.otherProfileMoreIcon,
         accessibilityLabel: "More"
