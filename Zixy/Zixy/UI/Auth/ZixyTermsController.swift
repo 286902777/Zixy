@@ -2,7 +2,7 @@ import UIKit
 
 final class ZixyTermsController: UIViewController {
 
-    static let acceptedDefaultsKey = "zixy_eula_accepted"
+    static let acceptedDefaultsKey = "zixy_eula_accepted_v2"
 
     private let requiresAcceptance: Bool
     private let onAgree: () -> Void
@@ -54,7 +54,7 @@ final class ZixyTermsController: UIViewController {
         let bodyView = UITextView()
         bodyView.translatesAutoresizingMaskIntoConstraints = false
         bodyView.text = Self.agreementText
-        bodyView.font = ZixyFontBook.bold(size: 9, relativeTo: .caption2)
+        bodyView.font = ZixyFontBook.bold(size: 14, relativeTo: .caption2)
         bodyView.textColor = ZixyColorPalette.ink.withAlphaComponent(0.74)
         bodyView.backgroundColor = .clear
         bodyView.isEditable = false
@@ -109,9 +109,9 @@ final class ZixyTermsController: UIViewController {
             panelView.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 21),
             titleLabel.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            bodyView.topAnchor.constraint(equalTo: card.topAnchor, constant: 68),
-            bodyView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            bodyView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            bodyView.topAnchor.constraint(equalTo: card.topAnchor, constant: 88),
+            bodyView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 24),
+            bodyView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -24),
             bodyView.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -10),
             buttons.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 8),
             buttons.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -8),

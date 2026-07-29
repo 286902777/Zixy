@@ -2,9 +2,15 @@ import UIKit
 
 final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate {
 
+    private static let termsAcceptanceDefaultsKey =
+        "zixy_gateway_terms_accepted"
+
     var onLoginByEmail: (() -> Void)?
     var onGuestAccess: (() -> Void)?
     var onSignUp: (() -> Void)?
+    private var hasAcceptedTerms = UserDefaults.standard.bool(
+        forKey: ZixyGatewayController.termsAcceptanceDefaultsKey
+    )
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -76,6 +82,10 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
         let termsButton = TermsSelectionButton()
         termsButton.translatesAutoresizingMaskIntoConstraints = false
         termsButton.accessibilityLabel = "Accept terms"
+        termsButton.isSelected = hasAcceptedTerms
+        termsButton.accessibilityValue = hasAcceptedTerms
+            ? "Selected"
+            : "Not selected"
         termsButton.addTarget(
             self,
             action: #selector(toggleTerms),
@@ -258,20 +268,44 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
     }
 
     @objc private func loginByEmail() {
+        guard validateTermsAcceptance() else {
+            return
+        }
         onLoginByEmail?()
     }
 
     @objc private func newUser() {
+        guard validateTermsAcceptance() else {
+            return
+        }
         onGuestAccess?()
     }
 
     @objc private func signUp() {
+        guard validateTermsAcceptance() else {
+            return
+        }
         onSignUp?()
     }
 
     @objc private func toggleTerms(_ sender: UIButton) {
         sender.isSelected.toggle()
+        hasAcceptedTerms = sender.isSelected
+        UserDefaults.standard.set(
+            hasAcceptedTerms,
+            forKey: Self.termsAcceptanceDefaultsKey
+        )
         sender.accessibilityValue = sender.isSelected ? "Selected" : "Not selected"
+    }
+
+    private func validateTermsAcceptance() -> Bool {
+        guard hasAcceptedTerms else {
+            showToast(
+                "Please agree to the User Agreement and Privacy Policy first."
+            )
+            return false
+        }
+        return true
     }
 }
 

@@ -11,10 +11,12 @@ final class ZixyDockBar: UIView {
     static let contentHeight: CGFloat = 64
 
     var onSelectionChanged: ((Int) -> Void)?
+    var onUnavailableSelection: ((Int) -> Void)?
 
     private let buttonStack = UIStackView()
     private var items: [Item] = []
     private var buttons: [UIButton] = []
+    private var unavailableIndexes: Set<Int> = []
 
     private(set) var selectedIndex = 0
 
@@ -30,6 +32,7 @@ final class ZixyDockBar: UIView {
 
     func configure(items: [Item], selectedIndex: Int = 0) {
         self.items = items
+        unavailableIndexes.removeAll()
         self.selectedIndex = min(
             max(selectedIndex, 0),
             max(items.count - 1, 0)
@@ -47,9 +50,14 @@ final class ZixyDockBar: UIView {
     func select(index: Int, sendsAction: Bool) {
         guard
             items.indices.contains(index),
-            buttons.indices.contains(index),
-            buttons[index].isEnabled
+            buttons.indices.contains(index)
         else {
+            return
+        }
+        guard !unavailableIndexes.contains(index) else {
+            if sendsAction {
+                onUnavailableSelection?(index)
+            }
             return
         }
         selectedIndex = index
@@ -64,7 +72,12 @@ final class ZixyDockBar: UIView {
             return
         }
         let button = buttons[index]
-        button.isEnabled = enabled
+        if enabled {
+            unavailableIndexes.remove(index)
+        } else {
+            unavailableIndexes.insert(index)
+        }
+        button.isEnabled = true
         button.alpha = 1
         button.accessibilityValue = enabled ? nil : "Sign in required"
     }
@@ -100,7 +113,6 @@ final class ZixyDockBar: UIView {
     ) -> UIButton {
         let button = UIButton(type: .custom)
         button.tag = index
-        button.adjustsImageWhenDisabled = false
         button.accessibilityLabel = item.accessibilityLabel
         button.accessibilityTraits = .button
         button.addTarget(

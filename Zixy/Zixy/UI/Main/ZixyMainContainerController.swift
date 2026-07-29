@@ -114,6 +114,27 @@ final class ZixyMainContainerController: UITabBarController {
             self.selectedIndex = index
             updateCustomTabBarVisibility(animated: false)
         }
+        zixyTabBar.onUnavailableSelection = { [weak self] _ in
+            self?.showGuestLoginPrompt()
+        }
+    }
+
+    private func showGuestLoginPrompt() {
+        guard isGuest, presentedViewController == nil else {
+            return
+        }
+        let controller = ZixyAlertController(kind: .loginRequired)
+        controller.onPrimaryAction = { [weak self] in
+            guard
+                let sceneDelegate = self?.view.window?.windowScene?.delegate
+                    as? SceneDelegate
+            else {
+                return
+            }
+            ZixySessionStore.clear()
+            sceneDelegate.showAuthenticationInterface()
+        }
+        present(controller, animated: true)
     }
 
     private func updateCustomTabBarVisibility(animated: Bool) {

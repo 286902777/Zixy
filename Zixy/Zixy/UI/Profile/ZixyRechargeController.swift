@@ -280,12 +280,22 @@ final class ZixyRechargeController: ZixyScreenController {
     }
 
     private static let defaultTiers = [
-        Tier(productIdentifier: "ymohxnvpkqxutvab", coinAmount: 63700, displayPrice: "$99.99"),
-        Tier(productIdentifier: "qnrcuelbtiuflyky", coinAmount: 29400, displayPrice: "$49.99"),
-        Tier(productIdentifier: "yadwwvxspgxwlndb", coinAmount: 10800, displayPrice: "$19.99"),
-        Tier(productIdentifier: "khtxlcejaxmqcsra", coinAmount: 5150, displayPrice: "$9.99"),
+        Tier(productIdentifier: "lvbsvhxcgcrvesor", coinAmount: 400, displayPrice: "$0.99"),
         Tier(productIdentifier: "dxismgcwewhrtezo", coinAmount: 2450, displayPrice: "$4.99"),
-        Tier(productIdentifier: "lvbsvhxcgcrvesor", coinAmount: 400, displayPrice: "$0.99")
+        Tier(productIdentifier: "khtxlcejaxmqcsra", coinAmount: 5150, displayPrice: "$9.99"),
+        Tier(productIdentifier: "yadwwvxspgxwlndb", coinAmount: 10800, displayPrice: "$19.99"),
+        Tier(productIdentifier: "qnrcuelbtiuflyky", coinAmount: 29400, displayPrice: "$49.99"),
+        Tier(productIdentifier: "ymohxnvpkqxutvab", coinAmount: 63700, displayPrice: "$99.99"), // test
+//        Tier(productIdentifier: "ncfnlenxprqtgqhm", coinAmount: 400, displayPrice: "$0.99"),
+//        Tier(productIdentifier: "wexeoceatwcfxeks", coinAmount: 800, displayPrice: "$1.99"),
+//        Tier(productIdentifier: "jvuiyjaeohdxtqde", coinAmount: 2450, displayPrice: "$4.99"),
+//        Tier(productIdentifier: "kpbpoejztpkpohnx", coinAmount: 5150, displayPrice: "$9.99"),
+//        Tier(productIdentifier: "xqfmclpzjohrcyhp", coinAmount: 6400, displayPrice: "$12.99"),
+//        Tier(productIdentifier: "uszwzrdsnsbptyky", coinAmount: 10800, displayPrice: "$19.99"),
+//        Tier(productIdentifier: "hglblpaweywdtjvy", coinAmount: 14900, displayPrice: "$24.99"),
+//        Tier(productIdentifier: "niblnhctebtmycmw", coinAmount: 29400, displayPrice: "$49.99"),
+//        Tier(productIdentifier: "jkbgkckzgqzavtkr", coinAmount: 39500, displayPrice: "$79.99"),
+//        Tier(productIdentifier: "ripumdcjjlbrdwoo", coinAmount: 63700, displayPrice: "$99.99"),
     ]
 }
 

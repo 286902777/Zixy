@@ -172,6 +172,10 @@ persisted session before routing back to authentication.
   for a guest session. Tabs two through four remain disabled and must be
   blocked at both the custom tab-bar control and container-selection levels so
   guest access cannot bypass the disabled buttons.
+- Tapping tabs two through four as a guest must keep the first tab selected and
+  present `ZixyAlertController(kind: .loginRequired)`. Choosing Log in clears
+  the guest session and routes back to authentication; cancelling leaves the
+  guest on the first tab.
 - Guest sessions are read-only for social interactions. Guests must not like
   posts or comments, submit comments, follow or unfollow another user, or open
   More actions.
@@ -192,6 +196,14 @@ Before the authentication screen can be used, `SceneDelegate` presents
 `zixy_eula_accepted` in `UserDefaults`, dismisses the EULA, and continues the
 existing flow. Cancelling terminates the current process as explicitly required
 by the product flow. Subsequent launches skip the first-launch EULA.
+
+On `ZixyGatewayController`, Login by email, Sign up, and `I'm new` must proceed
+only after the agreement checkbox is selected. If it is not selected, keep the
+user on the gateway screen and show a Toast requesting acceptance of the User
+Agreement and Privacy Policy. Persist the checkbox state in `UserDefaults` and
+restore both its behavior and selected appearance whenever the gateway screen
+is created again. This preference is independent from authenticated and guest
+session state.
 
 The main container owns four tab roots:
 

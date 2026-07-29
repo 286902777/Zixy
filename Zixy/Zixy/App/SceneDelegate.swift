@@ -11,6 +11,7 @@ import Darwin
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
+    private var isPresentingRequiredEULA = false
 
 
     func scene(
@@ -22,7 +23,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
 
-        let rootController: UIViewController = ZixySessionStore.hasActiveSession
+        let hasAcceptedEULA = UserDefaults.standard.bool(
+            forKey: ZixyTermsController.acceptedDefaultsKey
+        )
+        let canRestoreSession = hasAcceptedEULA
+            && ZixySessionStore.hasActiveSession
+        let rootController: UIViewController = canRestoreSession
             ? ZixyMainContainerController(isGuest: ZixySessionStore.isGuest)
             : makeZixyAccessCoordinator()
 
@@ -31,8 +37,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         window?.rootViewController = rootController
         window?.makeKeyAndVisible()
-
-        presentEULAIfNeeded(from: rootController)
     }
 
     private func makeZixyAccessCoordinator() -> ZixyAccessCoordinator {
@@ -47,16 +51,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func presentEULAIfNeeded(from presenter: UIViewController) {
-        guard !UserDefaults.standard.bool(
-            forKey: ZixyTermsController.acceptedDefaultsKey
-        ) else {
+        guard
+            !UserDefaults.standard.bool(
+                forKey: ZixyTermsController.acceptedDefaultsKey
+            ),
+            !isPresentingRequiredEULA
+        else {
             return
         }
 
+        isPresentingRequiredEULA = true
         let controller = ZixyTermsController(
             requiresAcceptance: true,
-            onAgree: { [weak presenter] in
-                presenter?.dismiss(animated: true)
+            onAgree: { [weak self, weak presenter] in
+                presenter?.dismiss(animated: true) {
+                    self?.isPresentingRequiredEULA = false
+                }
             },
             onCancel: {
                 exit(EXIT_SUCCESS)
@@ -112,8 +122,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // Called when the scene has moved from an inactive state to an active state.
-        // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+        guard let rootController = window?.rootViewController else {
+            return
+        }
+        presentEULAIfNeeded(from: rootController)
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
