@@ -33,12 +33,21 @@ class ZixyAuthCanvasController: UIViewController, UITextFieldDelegate {
         view.allTextFields.forEach {
             $0.delegate = self
             $0.returnKeyType = .done
+            $0.addTarget(
+                self,
+                action: #selector(textFieldDidFinishEditing),
+                for: .editingDidEndOnExit
+            )
         }
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
+        view.endEditing(true)
         return true
+    }
+
+    @objc private func textFieldDidFinishEditing() {
+        view.endEditing(true)
     }
 
     private func configureBackground() {

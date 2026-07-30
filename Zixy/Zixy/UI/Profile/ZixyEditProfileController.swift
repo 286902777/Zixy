@@ -22,6 +22,7 @@ final class ZixyEditProfileController: ZixyScreenController,
     private let loadingOverlay = ZixyProfileSaveLoadingView()
 
     private var keyboardObservers: [NSObjectProtocol] = []
+    private var currentUser: ZixyUserRecord?
     private var selectedImage: UIImage?
     private var isSaving = false
 
@@ -32,6 +33,7 @@ final class ZixyEditProfileController: ZixyScreenController,
         configureInputs()
         configureInteractions()
         observeKeyboard()
+        loadCurrentUser()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -249,6 +251,28 @@ final class ZixyEditProfileController: ZixyScreenController,
         bioTextView.inputAccessoryView = makeDoneToolbar()
     }
 
+    private func loadCurrentUser() {
+        guard let user = ZixyDataStore.shared.currentUser() else {
+            currentUser = nil
+            saveButton.isEnabled = false
+            saveButton.alpha = 0.45
+            showToast("Unable to load your profile.")
+            return
+        }
+
+        currentUser = user
+        usernameField.text = user.username
+        bioTextView.text = user.bio
+        bioPlaceholder.isHidden = !user.bio.isEmpty
+        avatarButton.setImage(
+            ZixyUserAvatarStore.image(for: user)
+                ?? ZixyImageLibrary.profileAvatar,
+            for: .normal
+        )
+        saveButton.isEnabled = true
+        saveButton.alpha = 1
+    }
+
     private func configureInteractions() {
         avatarButton.addTarget(
             self,
@@ -433,20 +457,64 @@ final class ZixyEditProfileController: ZixyScreenController,
             showToast("Enter a short bio.")
             return
         }
+        guard let currentUser else {
+            showToast("Unable to load your profile.")
+            return
+        }
 
         isSaving = true
         saveButton.isEnabled = false
         loadingOverlay.show()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }
-            isSaving = false
-            saveButton.isEnabled = true
-            loadingOverlay.hide()
-            showToast("Profile saved.")
+
+            var newAvatarReference: String?
+            do {
+                if let selectedImage {
+                    newAvatarReference = try ZixyUserAvatarStore.save(
+                        selectedImage
+                    )
+                }
+                let avatarReference = newAvatarReference
+                    ?? currentUser.avatarAssetName
+                let updatedUser = try ZixyDataStore.shared
+                    .updateCurrentUserProfile(
+                        username: username,
+                        bio: bio,
+                        avatarAssetName: avatarReference
+                    )
+
+                if newAvatarReference != nil {
+                    ZixyUserAvatarStore.remove(
+                        reference: currentUser.avatarAssetName
+                    )
+                }
+                self.currentUser = updatedUser
+                self.selectedImage = nil
+                NotificationCenter.default.post(
+                    name: .zixyUserProfileDidChange,
+                    object: updatedUser
+                )
+                self.finishSaving()
+                self.showToast("Profile saved.")
+            } catch {
+                if let newAvatarReference {
+                    ZixyUserAvatarStore.remove(reference: newAvatarReference)
+                }
+                self.finishSaving()
+                self.showToast("Unable to save your profile.")
+            }
         }
+    }
+
+    private func finishSaving() {
+        isSaving = false
+        saveButton.isEnabled = currentUser != nil
+        saveButton.alpha = currentUser == nil ? 0.45 : 1
+        loadingOverlay.hide()
     }
 }
 

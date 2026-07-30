@@ -1,11 +1,14 @@
+import AVFoundation
 import UIKit
 
 final class ZixyFeedController: ZixyScreenController {
 
     private struct FeedItem {
-        let imageName: String
+        let id: String
+        let mediaName: String
         let title: String
         let isVideo: Bool
+        var coverImage: UIImage?
         var likeCount: Int
         var isLiked: Bool
     }
@@ -22,64 +25,9 @@ final class ZixyFeedController: ZixyScreenController {
         static let cardFooterHeight: CGFloat = 34
     }
 
-    private var items: [FeedItem] = [
-        FeedItem(
-            imageName: "zixy_home_room_portrait",
-            title: "Technical explanation by a master woodcarver",
-            isVideo: false,
-            likeCount: 1_100,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_feed_wood_mountain",
-            title: "Excellent works in the woodcarving competition",
-            isVideo: true,
-            likeCount: 1_100,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_user_avatar",
-            title: "Resin figurine coloring tutorial",
-            isVideo: false,
-            likeCount: 1_100,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_ai_chat_background",
-            title: "Share finished handmade crafts",
-            isVideo: true,
-            likeCount: 1_100,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_home_ai_banner",
-            title: "Creative felt flower basket",
-            isVideo: false,
-            likeCount: 846,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_feed_wood_mountain",
-            title: "Detailed sculpture finishing process",
-            isVideo: false,
-            likeCount: 972,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_home_room_portrait",
-            title: "Small craft studio inspiration",
-            isVideo: true,
-            likeCount: 625,
-            isLiked: false
-        ),
-        FeedItem(
-            imageName: "zixy_user_avatar",
-            title: "Hand-painted character study",
-            isVideo: false,
-            likeCount: 508,
-            isLiked: false
-        )
-    ]
+    private var items: [FeedItem] = []
+    private var videoCoverCache: [String: UIImage] = [:]
+    private var videoCoverGenerators: [String: AVAssetImageGenerator] = [:]
 
     private let headerView = UIView()
 
@@ -125,6 +73,13 @@ final class ZixyFeedController: ZixyScreenController {
         waterfallLayout.delegate = self
         configureLayout()
         configureInteractions()
+        observePostCreation()
+        loadPosts()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadPosts()
     }
 
     private func configureLayout() {
@@ -181,12 +136,116 @@ final class ZixyFeedController: ZixyScreenController {
         )
     }
 
+    private func observePostCreation() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePostCreated),
+            name: .zixyPostDidCreate,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePostCreated),
+            name: .zixyBlacklistDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handlePostCreated() {
+        loadPosts()
+    }
+
     private func imageHeight(for item: FeedItem, itemWidth: CGFloat) -> CGFloat {
-        guard let image = UIImage(named: item.imageName),
+        guard let image = item.coverImage,
               image.size.width > 0 else {
             return itemWidth
         }
         return ceil(itemWidth * image.size.height / image.size.width)
+    }
+
+    private func loadPosts() {
+        items = ZixyDataStore.shared.posts().map { post in
+            let isVideo = Self.isVideoMedia(post.primaryMediaName)
+            return FeedItem(
+                id: post.id,
+                mediaName: post.primaryMediaName,
+                title: post.title,
+                isVideo: isVideo,
+                coverImage: isVideo
+                    ? videoCoverCache[post.primaryMediaName]
+                    : Self.image(named: post.primaryMediaName),
+                likeCount: post.likeCount,
+                isLiked: post.isLikedByCurrentUser
+            )
+        }
+        waterfallLayout.invalidateLayout()
+        collectionView.reloadData()
+
+        let videoNames = Set(
+            items
+                .filter { $0.isVideo && $0.coverImage == nil }
+                .map(\.mediaName)
+        )
+        videoNames.forEach(loadFirstFrame)
+    }
+
+    private func loadFirstFrame(for mediaName: String) {
+        guard
+            videoCoverCache[mediaName] == nil,
+            videoCoverGenerators[mediaName] == nil,
+            let url = Self.mediaURL(named: mediaName)
+        else {
+            return
+        }
+
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        videoCoverGenerators[mediaName] = generator
+        generator.generateCGImagesAsynchronously(
+            forTimes: [NSValue(time: .zero)]
+        ) { [weak self] _, image, _, result, _ in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                self.videoCoverGenerators[mediaName] = nil
+                guard result == .succeeded, let image else {
+                    return
+                }
+
+                let cover = UIImage(cgImage: image)
+                self.videoCoverCache[mediaName] = cover
+                let indexes = self.items.indices.filter {
+                    self.items[$0].mediaName == mediaName
+                }
+                for index in indexes {
+                    self.items[index].coverImage = cover
+                }
+                let indexPaths = indexes.map {
+                    IndexPath(item: $0, section: 0)
+                }
+                guard !indexPaths.isEmpty else {
+                    return
+                }
+                self.waterfallLayout.invalidateLayout()
+                self.collectionView.reloadItems(at: indexPaths)
+            }
+        }
+    }
+
+    private static func isVideoMedia(_ name: String) -> Bool {
+        let videoExtensions = Set(["mp4", "mov", "m4v"])
+        return videoExtensions.contains(
+            (name as NSString).pathExtension.lowercased()
+        )
+    }
+
+    private static func image(named mediaName: String) -> UIImage? {
+        ZixyPostMediaStore.image(reference: mediaName)
+    }
+
+    private static func mediaURL(named mediaName: String) -> URL? {
+        ZixyPostMediaStore.mediaURL(reference: mediaName)
     }
 
     private func titleHeight(for item: FeedItem, itemWidth: CGFloat) -> CGFloat {
@@ -243,7 +302,7 @@ extension ZixyFeedController:
             at: indexPath
         )?.frame.width ?? 172
         cell.configure(
-            imageName: item.imageName,
+            image: item.coverImage,
             imageHeight: imageHeight(for: item, itemWidth: itemWidth),
             title: item.title,
             isVideo: item.isVideo,
@@ -264,18 +323,20 @@ extension ZixyFeedController:
             return
         }
         let item = items[indexPath.item]
-        let poster = UIImage(named: item.imageName)
+        let poster = item.coverImage
         let media: ZixyVideoDetailController.Media
         if item.isVideo,
-           let url = Bundle.main.url(
-               forResource: "zixy_sample_craft_video",
-               withExtension: "mp4"
-           ) {
+           let url = Self.mediaURL(named: item.mediaName) {
             media = .video(url: url, poster: poster)
         } else {
             media = .image(poster)
         }
-        push(ZixyVideoDetailController(media: media))
+        push(
+            ZixyVideoDetailController(
+                postID: item.id,
+                media: media
+            )
+        )
     }
 
     private func toggleLike(at indexPath: IndexPath) {
@@ -286,8 +347,16 @@ extension ZixyFeedController:
         guard items.indices.contains(indexPath.item) else {
             return
         }
-        items[indexPath.item].isLiked.toggle()
-        items[indexPath.item].likeCount += items[indexPath.item].isLiked ? 1 : -1
+        let shouldLike = !items[indexPath.item].isLiked
+        guard let updatedPost = try? ZixyDataStore.shared.setPostLiked(
+            shouldLike,
+            postID: items[indexPath.item].id
+        ) else {
+            showToast("Unable to update the post.")
+            return
+        }
+        items[indexPath.item].isLiked = updatedPost.isLikedByCurrentUser
+        items[indexPath.item].likeCount = updatedPost.likeCount
         collectionView.reloadItems(at: [indexPath])
     }
 }
@@ -343,14 +412,17 @@ private final class ZixyFeedCardCell: UICollectionViewCell {
     }
 
     func configure(
-        imageName: String,
+        image: UIImage?,
         imageHeight: CGFloat,
         title: String,
         isVideo: Bool,
         likeCount: String,
         isLiked: Bool
     ) {
-        craftImageView.image = UIImage(named: imageName)
+        craftImageView.image = image
+        craftImageView.backgroundColor = image == nil
+            ? UIColor.systemGray6
+            : .clear
         imageHeightConstraint?.constant = imageHeight
         titleLabel.text = title
         playImageView.isHidden = !isVideo

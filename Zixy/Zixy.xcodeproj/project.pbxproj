@@ -163,9 +163,9 @@
 				DEVELOPMENT_TEAM = 6NUFR97X3A;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zixy/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = ca;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = mic;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = ph;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Zixy needs access to your camera so you can capture photos or videos of your handicrafts and update your profile picture.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Zixy needs access to your microphone so you can join live voice chats with artisans, send voice messages, and record audio clips.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Zixy needs access to your photo library so you can upload pictures and videos of your crafts, choose a profile picture, and share images in chat.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -203,9 +203,9 @@
 				DEVELOPMENT_TEAM = 6NUFR97X3A;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zixy/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = ca;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = mic;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = ph;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Zixy needs access to your camera so you can capture photos or videos of your handicrafts and update your profile picture.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Zixy needs access to your microphone so you can join live voice chats with artisans, send voice messages, and record audio clips.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Zixy needs access to your photo library so you can upload pictures and videos of your crafts, choose a profile picture, and share images in chat.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;

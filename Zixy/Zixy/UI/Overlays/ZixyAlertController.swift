@@ -283,13 +283,13 @@ final class ZixyAlertController: UIViewController {
     }
 
     @objc private func cancel() {
-        onCancel?()
-        dismiss(animated: true)
+        let action = onCancel
+        dismiss(animated: true, completion: action)
     }
 
     @objc private func performPrimaryAction() {
-        onPrimaryAction?()
-        dismiss(animated: true)
+        let action = onPrimaryAction
+        dismiss(animated: true, completion: action)
     }
 }
 

@@ -5,38 +5,13 @@ final class ZixyFollowingController: ZixyScreenController,
     UICollectionViewDelegateFlowLayout {
 
     private struct FollowingItem {
-        let id: Int
+        let email: String
         let name: String
         let image: UIImage?
         let isCurrentUser: Bool
     }
 
-    private var items = [
-        FollowingItem(
-            id: 0,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isCurrentUser: false
-        ),
-        FollowingItem(
-            id: 1,
-            name: "Marry✨",
-            image: ZixyImageLibrary.profileAvatar,
-            isCurrentUser: false
-        ),
-        FollowingItem(
-            id: 2,
-            name: "Marry✨",
-            image: ZixyImageLibrary.userAvatar,
-            isCurrentUser: false
-        ),
-        FollowingItem(
-            id: 3,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isCurrentUser: false
-        )
-    ]
+    private var items: [FollowingItem] = []
 
     private lazy var collectionView = makeCollectionView()
     private let emptyLabel = ZixyMemberListEmptyLabel(
@@ -47,6 +22,26 @@ final class ZixyFollowingController: ZixyScreenController,
         super.viewDidLoad()
         configureNavigation(title: "Following")
         configureLayout()
+        updateEmptyState()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadFollowing()
+    }
+
+    private func loadFollowing() {
+        items = ZixyDataStore.shared.following(
+            for: ZixySessionStore.currentUserIdentifier
+        ).map {
+            FollowingItem(
+                email: $0.email,
+                name: $0.username,
+                image: ZixyUserAvatarStore.image(for: $0),
+                isCurrentUser: false
+            )
+        }
+        collectionView.reloadData()
         updateEmptyState()
     }
 
@@ -115,7 +110,8 @@ final class ZixyFollowingController: ZixyScreenController,
         cell.configure(
             image: item.image,
             name: item.name,
-            actionLabel: "Unfollow"
+            actionLabel: "Follow",
+            actionImage: ZixyImageLibrary.followersAdd
         )
         cell.onRemove = { [weak self, weak cell] in
             guard
@@ -125,14 +121,10 @@ final class ZixyFollowingController: ZixyScreenController,
             else {
                 return
             }
-            removeFollowing(at: currentIndexPath)
+            addFollowing(at: currentIndexPath)
         }
         cell.onAvatarTapped = { [weak self] in
-            self?.pushZixyOtherProfile(
-                name: item.name,
-                image: item.image,
-                isCurrentUser: item.isCurrentUser
-            )
+            self?.pushZixyOtherProfile(userEmail: item.email)
         }
         return cell
     }
@@ -145,20 +137,25 @@ final class ZixyFollowingController: ZixyScreenController,
         CGSize(width: collectionView.bounds.width, height: 74)
     }
 
-    private func removeFollowing(at indexPath: IndexPath) {
+    private func addFollowing(at indexPath: IndexPath) {
         guard
             items.indices.contains(indexPath.item),
             !items[indexPath.item].isCurrentUser
         else {
             return
         }
-        items.remove(at: indexPath.item)
-        collectionView.performBatchUpdates {
-            collectionView.deleteItems(at: [indexPath])
-        } completion: { [weak self] _ in
-            self?.updateEmptyState()
+        let item = items[indexPath.item]
+        do {
+            try ZixyDataStore.shared.setFollowing(
+                true,
+                followedEmail: item.email,
+                followerEmail: ZixySessionStore.currentUserIdentifier
+            )
+        } catch {
+            showToast("Unable to update the follow status.")
+            return
         }
-        showToast("Unfollowed Marry.")
+        showToast("Following \(item.name).")
     }
 
     private func updateEmptyState() {
@@ -192,11 +189,16 @@ final class ZixyMemberRemovalCell: UICollectionViewCell {
         onAvatarTapped = nil
     }
 
-    func configure(image: UIImage?, name: String, actionLabel: String) {
+    func configure(
+        image: UIImage?,
+        name: String,
+        actionLabel: String,
+        actionImage: UIImage?
+    ) {
         avatarView.image = image
         nameLabel.text = name
         removeButton.setImage(
-            ZixyImageLibrary.profileRemove?.withRenderingMode(.alwaysOriginal),
+            actionImage?.withRenderingMode(.alwaysOriginal),
             for: .normal
         )
         removeButton.accessibilityLabel = "\(actionLabel) \(name)"

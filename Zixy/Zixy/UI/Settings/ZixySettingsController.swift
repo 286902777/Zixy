@@ -110,7 +110,7 @@ final class ZixySettingsController: ZixyScreenController {
         rows.forEach { $0.isEnabled = false }
         loadingView.show()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }

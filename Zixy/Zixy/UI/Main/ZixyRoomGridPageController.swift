@@ -11,7 +11,7 @@ final class ZixyRoomGridPageController: UIViewController {
     }
 
     private let categoryTitle: String
-    private let roomTitles: [String]
+    private var rooms: [ZixyRoomRecord]
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -41,9 +41,9 @@ final class ZixyRoomGridPageController: UIViewController {
         return collectionView
     }()
 
-    init(categoryTitle: String, roomTitles: [String]) {
+    init(categoryTitle: String, rooms: [ZixyRoomRecord]) {
         self.categoryTitle = categoryTitle
-        self.roomTitles = roomTitles
+        self.rooms = rooms
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -63,6 +63,14 @@ final class ZixyRoomGridPageController: UIViewController {
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
+
+    func reload(rooms: [ZixyRoomRecord]) {
+        self.rooms = rooms
+        guard isViewLoaded else {
+            return
+        }
+        collectionView.reloadData()
+    }
 }
 
 extension ZixyRoomGridPageController:
@@ -73,7 +81,7 @@ extension ZixyRoomGridPageController:
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        roomTitles.count
+        rooms.count
     }
 
     func collectionView(
@@ -86,9 +94,11 @@ extension ZixyRoomGridPageController:
         ) as? ZixyRoomCardCell else {
             return UICollectionViewCell()
         }
+        let room = rooms[indexPath.item]
         cell.configure(
-            title: roomTitles[indexPath.item],
-            listenerCount: 832
+            title: room.title,
+            listenerCount: room.members.count,
+            image: ZixyRoomCoverStore.image(reference: room.coverAssetName)
         )
         return cell
     }
@@ -112,9 +122,28 @@ extension ZixyRoomGridPageController:
         _ collectionView: UICollectionView,
         didSelectItemAt indexPath: IndexPath
     ) {
-        let controller = ZixyRoomDetailController(
-            roomTitle: roomTitles[indexPath.item]
-        )
+        guard rooms.indices.contains(indexPath.item) else {
+            return
+        }
+        var selectedRoom = rooms[indexPath.item]
+        if ZixySessionStore.isAuthenticated {
+            do {
+                selectedRoom = try ZixyDataStore.shared.joinRoom(
+                    id: selectedRoom.id,
+                    userEmail: ZixySessionStore.currentUserIdentifier
+                )
+                rooms[indexPath.item] = selectedRoom
+                collectionView.reloadItems(at: [indexPath])
+                NotificationCenter.default.post(
+                    name: .zixyRoomMembershipDidChange,
+                    object: selectedRoom.id
+                )
+            } catch {
+                showToast("Unable to join the room.")
+                return
+            }
+        }
+        let controller = ZixyRoomDetailController(room: selectedRoom)
         controller.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -164,9 +193,11 @@ private final class ZixyRoomCardCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         titleLabel.text = nil
+        portraitImageView.image = ZixyImageLibrary.homeRoomPortrait
     }
 
-    func configure(title: String, listenerCount: Int) {
+    func configure(title: String, listenerCount: Int, image: UIImage?) {
+        portraitImageView.image = image ?? ZixyImageLibrary.homeRoomPortrait
         titleLabel.text = title
         listenerBadge.configure(listenerCount: listenerCount)
         accessibilityLabel = "\(title), \(listenerCount) listeners"

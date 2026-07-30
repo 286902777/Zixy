@@ -3,11 +3,20 @@ import UIKit
 final class ZixyPasswordResetController: ZixyAuthCanvasController {
 
     var onCompleted: (() -> Void)?
+    private let loadingOverlay = ZixyLoadingOverlay()
+    private var isSaving = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureContent()
         registerTextFields(in: view)
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 
     private func configureContent() {
@@ -54,8 +63,17 @@ final class ZixyPasswordResetController: ZixyAuthCanvasController {
 
         let saveButton = ZixyGradientActionButton(title: "Save")
         saveButton.addAction(
-            UIAction { [weak self, weak email, weak password, weak confirmation] _ in
+            UIAction { [
+                weak self,
+                weak email,
+                weak password,
+                weak confirmation,
+                weak saveButton
+            ] _ in
                 guard let self else {
+                    return
+                }
+                guard !self.isSaving else {
                     return
                 }
                 let emailText = email?.textField.text ?? ""
@@ -70,8 +88,14 @@ final class ZixyPasswordResetController: ZixyAuthCanvasController {
                     return
                 }
                 self.view.endEditing(true)
-                self.showToast("Password updated.")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.isSaving = true
+                saveButton?.isEnabled = false
+                self.loadingOverlay.show(message: "Saving password")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self.isSaving = false
+                    saveButton?.isEnabled = true
+                    self.loadingOverlay.hide()
+                    self.showToast("Password updated.")
                     self.onCompleted?()
                 }
             },

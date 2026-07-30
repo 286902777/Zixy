@@ -3,6 +3,8 @@ import UIKit
 final class ZixyVideoCallController: UIViewController {
 
     private let participantName: String
+    private let participantEmail: String?
+    private let participantImage: UIImage?
     private var callingAnimationTimer: Timer?
     private var callingFrame = 0
     private var isEndingCall = false
@@ -76,8 +78,14 @@ final class ZixyVideoCallController: UIViewController {
         return button
     }()
 
-    init(participantName: String = "Katrina✨Ray") {
+    init(
+        participantName: String = "Katrina✨Ray",
+        participantEmail: String? = nil,
+        participantImage: UIImage? = nil
+    ) {
         self.participantName = participantName
+        self.participantEmail = participantEmail
+        self.participantImage = participantImage
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -90,6 +98,9 @@ final class ZixyVideoCallController: UIViewController {
         configureLayout()
         configureInteractions()
         nameLabel.text = participantName
+        if let participantImage {
+            avatarImageView.image = participantImage
+        }
         updateCallingText()
     }
 
@@ -168,11 +179,26 @@ final class ZixyVideoCallController: UIViewController {
     }
 
     private func configureInteractions() {
+        avatarImageView.isUserInteractionEnabled = true
+        avatarImageView.accessibilityTraits = .button
+        avatarImageView.addGestureRecognizer(
+            UITapGestureRecognizer(
+                target: self,
+                action: #selector(openParticipantProfile)
+            )
+        )
         endCallButton.addTarget(
             self,
             action: #selector(endCall),
             for: .touchUpInside
         )
+    }
+
+    @objc private func openParticipantProfile() {
+        guard let participantEmail else {
+            return
+        }
+        pushZixyOtherProfile(userEmail: participantEmail)
     }
 
     private func startCallingAnimation() {

@@ -3,6 +3,33 @@ import UIKit
 
 final class ZixyRechargeController: ZixyScreenController {
 
+    static var currentUserBalance: Int {
+        guard ZixySessionStore.isAuthenticated else {
+            return 0
+        }
+        return ZixyCoinBalanceStore.balance(
+            for: ZixySessionStore.currentUserIdentifier
+        )
+    }
+
+    @discardableResult
+    static func spendCoins(_ amount: Int) -> Bool {
+        guard amount > 0 else {
+            return true
+        }
+        guard ZixySessionStore.isAuthenticated else {
+            return false
+        }
+        do {
+            return try ZixyCoinBalanceStore.spend(
+                amount,
+                for: ZixySessionStore.currentUserIdentifier
+            )
+        } catch {
+            return false
+        }
+    }
+
     struct Tier {
         let productIdentifier: String?
         let coinAmount: Int
@@ -17,15 +44,17 @@ final class ZixyRechargeController: ZixyScreenController {
     }
 
     private enum Storage {
-        static let balanceKey = "zixy_coin_balance"
-        static let processedTransactionsKey = "zixy_processed_store_transactions"
+        static let processedTransactionsPrefix =
+            "zixy_processed_store_transactions"
     }
 
     private var currentBalance: Int
+    private let accountIdentifier: String
     private let tiers: [Tier]
     private var productsByIdentifier: [String: Product] = [:]
     private var processedTransactionIdentifiers: Set<String>
     private var isPurchasing = false
+    private var isLoadingProducts = false
     private var productLoadingTask: Task<Void, Never>?
     private var transactionUpdatesTask: Task<Void, Never>?
     private var unfinishedTransactionsTask: Task<Void, Never>?
@@ -67,18 +96,21 @@ final class ZixyRechargeController: ZixyScreenController {
         return collectionView
     }()
 
-    init(
-        balance: Int = 30_000,
-        tiers: [Tier] = ZixyRechargeController.defaultTiers
-    ) {
+    init(tiers: [Tier] = ZixyRechargeController.defaultTiers) {
+        accountIdentifier = ZixyCoinBalanceStore.normalizedAccount(
+            ZixySessionStore.currentUserIdentifier
+        )
         let defaults = UserDefaults.standard
-        if defaults.object(forKey: Storage.balanceKey) == nil {
-            defaults.set(balance, forKey: Storage.balanceKey)
-        }
-        currentBalance = defaults.integer(forKey: Storage.balanceKey)
+        currentBalance = ZixySessionStore.isAuthenticated
+            ? ZixyCoinBalanceStore.balance(for: accountIdentifier)
+            : 0
         self.tiers = tiers
         processedTransactionIdentifiers = Set(
-            defaults.stringArray(forKey: Storage.processedTransactionsKey) ?? []
+            defaults.stringArray(
+                forKey: Self.processedTransactionsKey(
+                    accountIdentifier: accountIdentifier
+                )
+            ) ?? []
         )
         super.init(nibName: nil, bundle: nil)
     }
@@ -126,11 +158,21 @@ final class ZixyRechargeController: ZixyScreenController {
     }
 
     private func selectTier(at indexPath: IndexPath) {
-        guard !isPurchasing else {
+        guard !isPurchasing, !isLoadingProducts else {
             return
         }
         guard ZixySessionStore.isAuthenticated else {
             showToast("Sign in to make a purchase.")
+            return
+        }
+        let purchaseUserIdentifier = ZixyCoinBalanceStore.normalizedAccount(
+            ZixySessionStore.currentUserIdentifier
+        )
+        guard
+            !purchaseUserIdentifier.isEmpty,
+            purchaseUserIdentifier == accountIdentifier
+        else {
+            showToast("The active account changed. Please reopen Recharge.")
             return
         }
         guard tiers.indices.contains(indexPath.item) else {
@@ -146,7 +188,11 @@ final class ZixyRechargeController: ZixyScreenController {
             return
         }
         Task { [weak self] in
-            await self?.purchase(product, for: tier)
+            await self?.purchase(
+                product,
+                for: tier,
+                userIdentifier: purchaseUserIdentifier
+            )
         }
     }
 
@@ -156,32 +202,46 @@ final class ZixyRechargeController: ZixyScreenController {
         guard !identifiers.isEmpty else {
             return
         }
+        isLoadingProducts = true
+        collectionView.isUserInteractionEnabled = false
+        loadingView.show(message: "Loading products")
+        let loadingStartedAt = Date()
         productLoadingTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
             do {
                 let products = try await Product.products(for: identifiers)
-                guard !Task.isCancelled else {
-                    return
+                if !Task.isCancelled {
+                    productsByIdentifier = Dictionary(
+                        uniqueKeysWithValues: products.map { ($0.id, $0) }
+                    )
+                    collectionView.reloadData()
                 }
-                self?.productsByIdentifier = Dictionary(
-                    uniqueKeysWithValues: products.map { ($0.id, $0) }
-                )
-                self?.collectionView.reloadData()
             } catch {
-                guard !Task.isCancelled else {
-                    return
+                if !Task.isCancelled {
+                    productsByIdentifier = [:]
                 }
-                self?.productsByIdentifier = [:]
             }
+            await waitForMinimumLoadingDuration(startedAt: loadingStartedAt)
+            isLoadingProducts = false
+            collectionView.isUserInteractionEnabled = true
+            loadingView.hide()
         }
     }
 
-    private func purchase(_ product: Product, for tier: Tier) async {
+    private func purchase(
+        _ product: Product,
+        for tier: Tier,
+        userIdentifier: String
+    ) async {
         guard !isPurchasing else {
             return
         }
         isPurchasing = true
         collectionView.isUserInteractionEnabled = false
         loadingView.show(message: "Processing purchase")
+        let loadingStartedAt = Date()
         defer {
             isPurchasing = false
             collectionView.isUserInteractionEnabled = true
@@ -191,7 +251,12 @@ final class ZixyRechargeController: ZixyScreenController {
         do {
             switch try await product.purchase() {
             case let .success(result):
-                await handleTransaction(result, expectedTier: tier, showsToast: true)
+                await handleTransaction(
+                    result,
+                    expectedTier: tier,
+                    userIdentifier: userIdentifier,
+                    showsToast: true
+                )
             case .pending:
                 showToast("Purchase is pending approval.")
             case .userCancelled:
@@ -202,6 +267,20 @@ final class ZixyRechargeController: ZixyScreenController {
         } catch {
             showToast("Unable to complete the purchase.")
         }
+        await waitForMinimumLoadingDuration(startedAt: loadingStartedAt)
+    }
+
+    private func waitForMinimumLoadingDuration(startedAt: Date) async {
+        let remainingDuration = max(
+            0,
+            1 - Date().timeIntervalSince(startedAt)
+        )
+        guard remainingDuration > 0 else {
+            return
+        }
+        try? await Task.sleep(
+            nanoseconds: UInt64(remainingDuration * 1_000_000_000)
+        )
     }
 
     private func observeTransactions() {
@@ -214,6 +293,7 @@ final class ZixyRechargeController: ZixyScreenController {
                 await handleTransaction(
                     result,
                     expectedTier: nil,
+                    userIdentifier: accountIdentifier,
                     showsToast: true
                 )
             }
@@ -230,6 +310,7 @@ final class ZixyRechargeController: ZixyScreenController {
                 await handleTransaction(
                     result,
                     expectedTier: nil,
+                    userIdentifier: accountIdentifier,
                     showsToast: false
                 )
             }
@@ -239,6 +320,7 @@ final class ZixyRechargeController: ZixyScreenController {
     private func handleTransaction(
         _ result: VerificationResult<Transaction>,
         expectedTier: Tier?,
+        userIdentifier: String,
         showsToast: Bool
     ) async {
         guard case let .verified(transaction) = result else {
@@ -256,6 +338,15 @@ final class ZixyRechargeController: ZixyScreenController {
         else {
             return
         }
+        guard
+            !userIdentifier.isEmpty,
+            userIdentifier == accountIdentifier
+        else {
+            if showsToast {
+                showToast("Unable to identify the purchasing account.")
+            }
+            return
+        }
 
         let transactionIdentifier = String(transaction.id)
         guard !processedTransactionIdentifiers.contains(transactionIdentifier) else {
@@ -263,13 +354,38 @@ final class ZixyRechargeController: ZixyScreenController {
             return
         }
 
+        let storedBalance = ZixyCoinBalanceStore.balance(
+            for: userIdentifier
+        )
+        let (updatedBalance, overflow) = storedBalance.addingReportingOverflow(
+            tier.coinAmount
+        )
+        guard !overflow else {
+            if showsToast {
+                showToast("Unable to add coins to this account.")
+            }
+            return
+        }
+        do {
+            try ZixyCoinBalanceStore.setBalance(
+                updatedBalance,
+                for: userIdentifier
+            )
+        } catch {
+            if showsToast {
+                showToast("Unable to securely save the coin balance.")
+            }
+            return
+        }
+
         processedTransactionIdentifiers.insert(transactionIdentifier)
-        currentBalance += tier.coinAmount
+        currentBalance = updatedBalance
         let defaults = UserDefaults.standard
-        defaults.set(currentBalance, forKey: Storage.balanceKey)
         defaults.set(
             Array(processedTransactionIdentifiers).sorted(),
-            forKey: Storage.processedTransactionsKey
+            forKey: Self.processedTransactionsKey(
+                accountIdentifier: userIdentifier
+            )
         )
         collectionView.reloadSections(IndexSet(integer: 0))
         await transaction.finish()
@@ -277,6 +393,12 @@ final class ZixyRechargeController: ZixyScreenController {
         if showsToast {
             showToast("\(tier.coinAmount) coins added.")
         }
+    }
+
+    private static func processedTransactionsKey(
+        accountIdentifier: String
+    ) -> String {
+        "\(Storage.processedTransactionsPrefix).\(accountIdentifier)"
     }
 
     private static let defaultTiers = [

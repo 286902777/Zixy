@@ -1,42 +1,28 @@
+import AVFoundation
 import UIKit
 
 final class ZixyProfileController: ZixyScreenController,
     UICollectionViewDataSource,
+    UICollectionViewDelegate,
     ZixyMasonryLayoutDelegate {
 
     private struct PostItem {
-        let image: UIImage?
+        let id: String
+        let mediaName: String
         let text: String
-        let likes: String
+        let likeCount: Int
         let showsPlayIcon: Bool
+        var image: UIImage?
     }
 
-    private let posts = [
-        PostItem(
-            image: ZixyImageLibrary.homeRoomPortrait,
-            text: "I like Harry Potter, how about you?",
-            likes: "1.1K",
-            showsPlayIcon: false
-        ),
-        PostItem(
-            image: ZixyImageLibrary.profileAvatar,
-            text: "I like Harry Potter, how about you?",
-            likes: "1.2K",
-            showsPlayIcon: true
-        ),
-        PostItem(
-            image: ZixyImageLibrary.userAvatar,
-            text: "A new handmade piece from my workshop.",
-            likes: "986",
-            showsPlayIcon: false
-        ),
-        PostItem(
-            image: ZixyImageLibrary.homeRoomPortrait,
-            text: "Making something beautiful today.",
-            likes: "832",
-            showsPlayIcon: false
-        )
-    ]
+    private var currentUser: ZixyUserRecord?
+    private var posts: [PostItem] = []
+    private var followingCount = 0
+    private var followerCount = 0
+    private var totalLikeCount = 0
+    private var currentBalance = 0
+    private var videoCoverCache: [String: UIImage] = [:]
+    private var videoCoverGenerators: [String: AVAssetImageGenerator] = [:]
 
     private lazy var collectionView: UICollectionView = {
         let layout = ZixyMasonryLayout()
@@ -50,8 +36,10 @@ final class ZixyProfileController: ZixyScreenController,
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
         collectionView.showsVerticalScrollIndicator = false
+        collectionView.contentInsetAdjustmentBehavior = .never
         collectionView.contentInset.bottom = 92
         collectionView.dataSource = self
+        collectionView.delegate = self
         collectionView.register(
             ZixyProfilePostCell.self,
             forCellWithReuseIdentifier: ZixyProfilePostCell.reuseIdentifier
@@ -71,16 +59,146 @@ final class ZixyProfileController: ZixyScreenController,
         configureCollectionView()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reloadProfile()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        let previousTopInset = collectionView.contentInset.top
+        let keepsInitialPosition =
+            collectionView.contentOffset.y <= -previousTopInset + 1
+        collectionView.contentInset.top = view.safeAreaInsets.top
+        if keepsInitialPosition {
+            collectionView.setContentOffset(
+                CGPoint(
+                    x: collectionView.contentOffset.x,
+                    y: -view.safeAreaInsets.top
+                ),
+                animated: false
+            )
+        }
+    }
+
     private func configureCollectionView() {
         view.addSubview(collectionView)
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor
-            ),
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func reloadProfile() {
+        guard let user = ZixyDataStore.shared.currentUser() else {
+            currentUser = nil
+            posts = []
+            followingCount = 0
+            followerCount = 0
+            totalLikeCount = 0
+            currentBalance = 0
+            collectionView.collectionViewLayout.invalidateLayout()
+            collectionView.reloadData()
+            return
+        }
+
+        currentUser = user
+        followingCount = ZixyDataStore.shared.following(for: user.email).count
+        followerCount = ZixyDataStore.shared.followers(for: user.email).count
+        currentBalance = ZixyRechargeController.currentUserBalance
+        let storedPosts = ZixyDataStore.shared.posts(for: user.email)
+        totalLikeCount = storedPosts.reduce(0) { $0 + $1.likeCount }
+        posts = storedPosts.map { post in
+            let isVideo = Self.isVideoMedia(post.primaryMediaName)
+            return PostItem(
+                id: post.id,
+                mediaName: post.primaryMediaName,
+                text: post.title,
+                likeCount: post.likeCount,
+                showsPlayIcon: isVideo,
+                image: isVideo
+                    ? videoCoverCache[post.primaryMediaName]
+                    : Self.image(named: post.primaryMediaName)
+            )
+        }
+        collectionView.collectionViewLayout.invalidateLayout()
+        collectionView.reloadData()
+
+        let videoNames = Set(
+            posts
+                .filter { $0.showsPlayIcon && $0.image == nil }
+                .map(\.mediaName)
+        )
+        videoNames.forEach(loadFirstFrame)
+    }
+
+    private func loadFirstFrame(for mediaName: String) {
+        guard
+            videoCoverCache[mediaName] == nil,
+            videoCoverGenerators[mediaName] == nil,
+            let url = Self.mediaURL(named: mediaName)
+        else {
+            return
+        }
+
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        videoCoverGenerators[mediaName] = generator
+        generator.generateCGImagesAsynchronously(
+            forTimes: [NSValue(time: .zero)]
+        ) { [weak self] _, image, _, result, _ in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                self.videoCoverGenerators[mediaName] = nil
+                guard result == .succeeded, let image else {
+                    return
+                }
+
+                let cover = UIImage(cgImage: image)
+                self.videoCoverCache[mediaName] = cover
+                let indexes = self.posts.indices.filter {
+                    self.posts[$0].mediaName == mediaName
+                }
+                indexes.forEach { self.posts[$0].image = cover }
+                let indexPaths = indexes.map {
+                    IndexPath(item: $0, section: 0)
+                }
+                guard !indexPaths.isEmpty else {
+                    return
+                }
+                self.collectionView.collectionViewLayout.invalidateLayout()
+                self.collectionView.reloadItems(at: indexPaths)
+            }
+        }
+    }
+
+    private static func isVideoMedia(_ name: String) -> Bool {
+        let videoExtensions = Set(["mp4", "mov", "m4v"])
+        return videoExtensions.contains(
+            (name as NSString).pathExtension.lowercased()
+        )
+    }
+
+    private static func image(named mediaName: String) -> UIImage? {
+        ZixyPostMediaStore.image(reference: mediaName)
+    }
+
+    private static func mediaURL(named mediaName: String) -> URL? {
+        ZixyPostMediaStore.mediaURL(reference: mediaName)
+    }
+
+    private static func formattedCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000)
+        }
+        if count >= 1_000 {
+            return String(format: "%.1fK", Double(count) / 1_000)
+        }
+        return "\(count)"
     }
 
     func collectionView(
@@ -104,10 +222,33 @@ final class ZixyProfileController: ZixyScreenController,
         cell.configure(
             image: post.image,
             text: post.text,
-            likes: post.likes,
+            likes: Self.formattedCount(post.likeCount),
             showsPlayIcon: post.showsPlayIcon
         )
         return cell
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didSelectItemAt indexPath: IndexPath
+    ) {
+        guard posts.indices.contains(indexPath.item) else {
+            return
+        }
+        let post = posts[indexPath.item]
+        let media: ZixyVideoDetailController.Media
+        if post.showsPlayIcon,
+           let url = Self.mediaURL(named: post.mediaName) {
+            media = .video(url: url, poster: post.image)
+        } else {
+            media = .image(post.image)
+        }
+        push(
+            ZixyVideoDetailController(
+                postID: post.id,
+                media: media
+            )
+        )
     }
 
     func collectionView(
@@ -122,6 +263,19 @@ final class ZixyProfileController: ZixyScreenController,
         ) as? ZixyProfileHeaderView else {
             return UICollectionReusableView()
         }
+        header.configure(
+            user: currentUser,
+            followingCount: followingCount,
+            followerCount: followerCount,
+            likesCount: totalLikeCount,
+            balance: currentBalance
+        )
+        header.onAvatarTapped = { [weak self] in
+            guard let email = self?.currentUser?.email else {
+                return
+            }
+            self?.pushZixyOtherProfile(userEmail: email)
+        }
         header.onAction = { [weak self] title in
             guard let self else {
                 return
@@ -129,7 +283,7 @@ final class ZixyProfileController: ZixyScreenController,
             if title == "Edit Profile" {
                 push(ZixyEditProfileController())
             } else if title == "My Room" {
-                push(ZixyMyRoomController(mode: ZixyMyRoomController.currentMode))
+                push(ZixyMyRoomController())
             } else if title == "Following" {
                 push(ZixyFollowingController())
             } else if title == "Followers" {
@@ -166,11 +320,25 @@ private final class ZixyProfileHeaderView: UICollectionReusableView {
     static let reuseIdentifier = "ZixyProfileHeaderView"
 
     var onAction: ((String) -> Void)?
+    var onAvatarTapped: (() -> Void)?
 
     private let avatarView = UIImageView(image: ZixyImageLibrary.profileAvatar)
     private let nameLabel = UILabel()
     private let bioLabel = UILabel()
+    private let balanceLabel = UILabel()
     private let settingsCard = UIView()
+    private let followingControl = ZixyProfileStatControl(
+        title: "Following",
+        value: "0"
+    )
+    private let followerControl = ZixyProfileStatControl(
+        title: "Followers",
+        value: "0"
+    )
+    private let likesControl = ZixyProfileStatControl(
+        title: "Likes",
+        value: "0"
+    )
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -184,11 +352,37 @@ private final class ZixyProfileHeaderView: UICollectionReusableView {
         nil
     }
 
+    func configure(
+        user: ZixyUserRecord?,
+        followingCount: Int,
+        followerCount: Int,
+        likesCount: Int,
+        balance: Int
+    ) {
+        avatarView.image = user.flatMap {
+            ZixyUserAvatarStore.image(for: $0)
+        } ?? ZixyImageLibrary.profileAvatar
+        nameLabel.text = user?.username ?? "Profile"
+        bioLabel.text = user?.bio ?? ""
+        followingControl.update(value: Self.formattedCount(followingCount))
+        followerControl.update(value: Self.formattedCount(followerCount))
+        likesControl.update(value: Self.formattedCount(likesCount))
+        balanceLabel.text = "My Balance: \(balance)"
+    }
+
     private func configureProfile() {
         avatarView.translatesAutoresizingMaskIntoConstraints = false
         avatarView.contentMode = .scaleAspectFill
         avatarView.clipsToBounds = true
         avatarView.layer.cornerRadius = 35
+        avatarView.isUserInteractionEnabled = true
+        avatarView.accessibilityTraits = .button
+        avatarView.addGestureRecognizer(
+            UITapGestureRecognizer(
+                target: self,
+                action: #selector(avatarTapped)
+            )
+        )
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.text = "Katrina✨Ray"
@@ -238,12 +432,25 @@ private final class ZixyProfileHeaderView: UICollectionReusableView {
         ])
     }
 
+    @objc private func avatarTapped() {
+        onAvatarTapped?()
+    }
+
     private func configureStats() {
         let stack = UIStackView(arrangedSubviews: [
-            makeStat(title: "Following", value: "1.1 K"),
-            makeStat(title: "Followers", value: "1.2 K"),
-            makeStat(title: "Likes", value: "1.2 K")
+            followingControl,
+            followerControl,
+            likesControl
         ])
+        followingControl.onTap = { [weak self] title in
+            self?.onAction?(title)
+        }
+        followerControl.onTap = { [weak self] title in
+            self?.onAction?(title)
+        }
+        likesControl.onTap = { [weak self] title in
+            self?.onAction?(title)
+        }
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.distribution = .fillEqually
@@ -283,9 +490,8 @@ private final class ZixyProfileHeaderView: UICollectionReusableView {
             alpha: 1
         )
 
-        let balanceLabel = UILabel()
         balanceLabel.translatesAutoresizingMaskIntoConstraints = false
-        balanceLabel.text = "My Balance: 14200"
+        balanceLabel.text = "My Balance: 0"
         balanceLabel.font = ZixyFontBook.bold(size: 9, relativeTo: .caption2)
         balanceLabel.textColor = .white
 
@@ -404,12 +610,14 @@ private final class ZixyProfileHeaderView: UICollectionReusableView {
         }
     }
 
-    private func makeStat(title: String, value: String) -> UIView {
-        let control = ZixyProfileStatControl(title: title, value: value)
-        control.onTap = { [weak self] title in
-            self?.onAction?(title)
+    private static func formattedCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1f M", Double(count) / 1_000_000)
         }
-        return control
+        if count >= 1_000 {
+            return String(format: "%.1f K", Double(count) / 1_000)
+        }
+        return "\(count)"
     }
 }
 
@@ -417,15 +625,29 @@ private final class ZixyProfileStatControl: UIControl {
 
     var onTap: ((String) -> Void)?
     private let title: String
+    private let label = UILabel()
 
     init(title: String, value: String) {
         self.title = title
         super.init(frame: .zero)
 
-        let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textAlignment = .center
         label.isUserInteractionEnabled = false
+        update(value: value)
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: topAnchor),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        accessibilityLabel = "\(title), \(value)"
+        accessibilityTraits = .button
+    }
+
+    func update(value: String) {
         label.attributedText = NSAttributedString(
             string: "\(title)  \(value)",
             attributes: [
@@ -438,16 +660,7 @@ private final class ZixyProfileStatControl: UIControl {
                 )
             ]
         )
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-        addTarget(self, action: #selector(tapped), for: .touchUpInside)
         accessibilityLabel = "\(title), \(value)"
-        accessibilityTraits = .button
     }
 
     required init?(coder: NSCoder) {
@@ -524,7 +737,7 @@ final class ZixyProfilePostCell: UICollectionViewCell {
     private let textLabel = UILabel()
     private let likesLabel = UILabel()
     private let playView = UIImageView(
-        image: UIImage(systemName: "play.fill")
+        image: ZixyImageLibrary.feedVideoPlay
     )
 
     override init(frame: CGRect) {
@@ -573,7 +786,6 @@ final class ZixyProfilePostCell: UICollectionViewCell {
         likesLabel.textColor = .systemGray
 
         playView.translatesAutoresizingMaskIntoConstraints = false
-        playView.tintColor = UIColor.white.withAlphaComponent(0.75)
         playView.contentMode = .scaleAspectFit
 
         [imageView, textLabel, likesLabel, playView].forEach {

@@ -124,6 +124,45 @@ Do not create separate controller classes solely for these visual states.
 - Use a toast for normal feedback, success, failure, and lightweight errors.
   Do not create a `UIAlertController` for those messages.
 
+## Loading State Rules
+
+- Sign in, Sign up, Save, Publish, Submit, Confirm, and Log out operations must
+  display Loading while their actual work is in progress.
+- StoreKit product lookup, purchase, verification, and secure coin crediting
+  must remain covered by Loading.
+- The first visit to Home after each app launch must display Loading once and
+  hide it after the first screen is presented. Switching tabs, returning Home,
+  or recreating Home during the same app run must not show it again.
+- Perform synchronous input, session, permission, and balance validation before
+  showing Loading. Validation failures use Toast without showing Loading.
+- Show Loading immediately before network, database, file, StoreKit, or other
+  time-consuming work starts.
+- A Confirm action shows Loading only after the user confirms and all required
+  validation succeeds; merely presenting the confirmation does not show it.
+- Publish and Submit Loading begins when persistence or submission actually
+  starts and ends only after saving and required UI refresh succeeds or fails.
+- Save Loading covers the save and required data refresh. Back, Cancel, and
+  validation failures do not show Loading.
+- Sign in, Sign up, and Log out Loading covers identity persistence, session
+  changes, and required root-controller replacement.
+- Sending chat messages, including text and image messages, must never display
+  full-screen Loading.
+- Navigation, tab switching, scrolling, cell selection, likes, follows, and
+  other lightweight local state changes do not show Loading unless they start
+  a genuinely time-consuming submission.
+- Loading must disable repeated taps and submissions for its complete lifetime.
+- Once shown, Loading must remain visible for at least 1 second and normally
+  disappear within 3 seconds. If the underlying operation takes longer than
+  3 seconds, keep Loading visible until the operation reaches a terminal state;
+  never hide it while required work is still in progress.
+- Every success, failure, cancellation, pending result, and early-exit path
+  after Loading begins must hide it and restore interaction.
+- Loading remains visible for at least one second. Routine local operations
+  should normally finish and hide it within three seconds, but genuinely
+  unfinished work must keep Loading visible rather than hiding early.
+- Loading must not move the navigation bar or break keyboard dismissal,
+  controls, list interaction, edge-swipe navigation, or tab-bar behavior.
+
 ## AI Chat Daily Limit
 
 - Each authenticated user may send at most three messages to
@@ -136,6 +175,26 @@ Do not create separate controller classes solely for these visual states.
 - Validate the quota immediately before appending the user message. The fourth
   and later attempts must not change the conversation or request an AI reply
   and must show a Toast explaining that the daily limit was reached.
+
+## Seed Database and Authentication
+
+- On the first database creation, `ZixyDataStore` imports
+  `Data/zixy_seed_users.csv` into the persistent Core Data store. The seed
+  includes users, credentials, profiles, posts, follows, and chat messages.
+- Every seeded user's email is the lowercase username followed by
+  `@gmail.com`; seeded passwords are `123456` and are stored as SHA-256 hashes.
+  Login must validate both fields against the database before creating a
+  session.
+- Elena and two randomly selected seeded users form a mutually following
+  three-person group. The random choice is made only while creating an empty
+  database, then remains stable through persistence.
+- Initial conversations are created between every pair in that three-person
+  group. Chat lists, conversation history, sent text messages, followers, and
+  following lists must read from and write to `ZixyDataStore`.
+- Elena owns two seeded chat rooms. One room contains three users in total and
+  the other contains four users in total, with the non-Elena members selected
+  randomly from the seeded users. Room membership is persisted and the Rooms
+  list and room-detail seats must read these records from `ZixyDataStore`.
 
 ## Asset Catalog Layout
 

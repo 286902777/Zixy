@@ -4,39 +4,7 @@ final class ZixyBlacklistController: ZixyScreenController,
     UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout {
 
-    private struct BlockedItem {
-        let id: Int
-        let name: String
-        let image: UIImage?
-        let isCurrentUser: Bool
-    }
-
-    private var items = [
-        BlockedItem(
-            id: 0,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isCurrentUser: false
-        ),
-        BlockedItem(
-            id: 1,
-            name: "Marry✨",
-            image: ZixyImageLibrary.profileAvatar,
-            isCurrentUser: false
-        ),
-        BlockedItem(
-            id: 2,
-            name: "Marry✨",
-            image: ZixyImageLibrary.userAvatar,
-            isCurrentUser: false
-        ),
-        BlockedItem(
-            id: 3,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isCurrentUser: false
-        )
-    ]
+    private var items: [ZixyUserRecord] = []
 
     private lazy var collectionView = makeCollectionView()
     private let emptyLabel = ZixyMemberListEmptyLabel(
@@ -47,7 +15,12 @@ final class ZixyBlacklistController: ZixyScreenController,
         super.viewDidLoad()
         configureNavigation(title: "Blacklist")
         configureLayout()
-        updateEmptyState()
+        loadBlockedUsers()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadBlockedUsers()
     }
 
     private func makeCollectionView() -> UICollectionView {
@@ -112,10 +85,12 @@ final class ZixyBlacklistController: ZixyScreenController,
             return UICollectionViewCell()
         }
         let item = items[indexPath.item]
+        let image = ZixyUserAvatarStore.image(for: item)
         cell.configure(
-            image: item.image,
-            name: item.name,
-            actionLabel: "Remove from blacklist"
+            image: image,
+            name: item.username,
+            actionLabel: "Remove from blacklist",
+            actionImage: ZixyImageLibrary.profileRemove
         )
         cell.onRemove = { [weak self, weak cell] in
             guard
@@ -128,11 +103,7 @@ final class ZixyBlacklistController: ZixyScreenController,
             removeBlockedMember(at: currentIndexPath)
         }
         cell.onAvatarTapped = { [weak self] in
-            self?.pushZixyOtherProfile(
-                name: item.name,
-                image: item.image,
-                isCurrentUser: item.isCurrentUser
-            )
+            self?.pushZixyOtherProfile(userEmail: item.email)
         }
         return cell
     }
@@ -147,9 +118,17 @@ final class ZixyBlacklistController: ZixyScreenController,
 
     private func removeBlockedMember(at indexPath: IndexPath) {
         guard
-            items.indices.contains(indexPath.item),
-            !items[indexPath.item].isCurrentUser
+            items.indices.contains(indexPath.item)
         else {
+            return
+        }
+        let user = items[indexPath.item]
+        guard (try? ZixyDataStore.shared.setBlocked(
+            false,
+            blockedEmail: user.email,
+            blockerEmail: ZixySessionStore.currentUserIdentifier
+        )) != nil else {
+            showToast("Unable to update the blacklist.")
             return
         }
         items.remove(at: indexPath.item)
@@ -158,7 +137,25 @@ final class ZixyBlacklistController: ZixyScreenController,
         } completion: { [weak self] _ in
             self?.updateEmptyState()
         }
+        NotificationCenter.default.post(
+            name: .zixyBlacklistDidChange,
+            object: user.email
+        )
         showToast("Removed from blacklist.")
+    }
+
+    private func loadBlockedUsers() {
+        guard ZixySessionStore.isAuthenticated else {
+            items = []
+            collectionView.reloadData()
+            updateEmptyState()
+            return
+        }
+        items = ZixyDataStore.shared.blockedUsers(
+            for: ZixySessionStore.currentUserIdentifier
+        )
+        collectionView.reloadData()
+        updateEmptyState()
     }
 
     private func updateEmptyState() {

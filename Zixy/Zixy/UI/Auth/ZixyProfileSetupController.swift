@@ -11,7 +11,7 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
         case male
     }
 
-    var onCompleted: (() -> Void)?
+    var onCompleted: ((String, UIImage?) -> Bool)?
 
     private let nameField = ZixyAuthFieldView(
         title: "Name",
@@ -51,8 +51,11 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
         height: 74,
         titleSize: 22
     )
+    private let loadingOverlay = ZixyLoadingOverlay()
 
     private var selectedGender: Gender = .female
+    private var selectedAvatarImage: UIImage?
+    private var isProcessing = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -63,6 +66,13 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
         configureControlledInputs()
         applyGender()
         registerTextFields(in: view)
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 
     override func viewDidLayoutSubviews() {
@@ -428,12 +438,16 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
                     self?.showToast("Unable to load the selected photo.")
                     return
                 }
+                self?.selectedAvatarImage = image
                 self?.avatarView.image = image
             }
         }
     }
 
     @objc private func completeProfile() {
+        guard !isProcessing else {
+            return
+        }
         view.endEditing(true)
         let name = nameField.textField.text?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -449,7 +463,24 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
             showToast("Enter your location.")
             return
         }
-        onCompleted?()
+        isProcessing = true
+        releaseButton.isEnabled = false
+        loadingOverlay.show(message: "Creating account")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else {
+                return
+            }
+            let didComplete = self.onCompleted?(
+                name,
+                self.selectedAvatarImage
+            ) ?? false
+            self.isProcessing = false
+            self.releaseButton.isEnabled = true
+            self.loadingOverlay.hide()
+            if !didComplete {
+                self.showToast("Unable to create the account.")
+            }
+        }
     }
 
     @objc private func goBack() {

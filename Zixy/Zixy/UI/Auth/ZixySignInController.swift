@@ -8,7 +8,7 @@ final class ZixySignInController: ZixyAuthCanvasController {
     }
 
     var onSignedIn: ((String) -> Void)?
-    var onRegistrationReady: ((String) -> Void)?
+    var onRegistrationReady: ((String, String) -> Void)?
     var onForgotPassword: (() -> Void)?
 
     private let emailField = ZixyAuthFieldView(
@@ -60,8 +60,10 @@ final class ZixySignInController: ZixyAuthCanvasController {
     private let forgotButton = UIButton(type: .system)
     private let inactiveTabBackgroundView = UIView()
     private let cardBackgroundView = UIImageView()
+    private let loadingOverlay = ZixyLoadingOverlay()
 
     private var mode: Mode
+    private var isProcessing = false
 
     init(mode: Mode) {
         self.mode = mode
@@ -81,6 +83,13 @@ final class ZixySignInController: ZixyAuthCanvasController {
         configureContent()
         applyMode()
         registerTextFields(in: view)
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 
     override func viewDidLayoutSubviews() {
@@ -284,6 +293,9 @@ final class ZixySignInController: ZixyAuthCanvasController {
     }
 
     @objc private func submit() {
+        guard !isProcessing else {
+            return
+        }
         view.endEditing(true)
         guard
             let email = emailField.textField.text?.trimmingCharacters(
@@ -302,9 +314,36 @@ final class ZixySignInController: ZixyAuthCanvasController {
                 showToast("Passwords do not match.")
                 return
             }
-            onRegistrationReady?(email)
-        } else {
-            onSignedIn?(email)
+            guard ZixyDataStore.shared.isEmailAvailable(email) else {
+                showToast("An account already exists for this email.")
+                return
+            }
+        }
+
+        isProcessing = true
+        primaryButton.isEnabled = false
+        loadingOverlay.show(
+            message: mode == .signUp ? "Creating account" : "Signing in"
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else {
+                return
+            }
+            defer {
+                self.isProcessing = false
+                self.primaryButton.isEnabled = true
+                self.loadingOverlay.hide()
+            }
+            if self.mode == .signUp {
+                self.onRegistrationReady?(email, password)
+            } else if ZixyDataStore.shared.authenticate(
+                email: email,
+                password: password
+            ) != nil {
+                self.onSignedIn?(email)
+            } else {
+                self.showToast("Incorrect email or password.")
+            }
         }
     }
 

@@ -2,12 +2,14 @@ import UIKit
 
 final class ZixyHomeController: ZixyScreenController {
 
+    private static var hasShownInitialLoading = false
+
     private enum Layout {
         static let bannerAspectRatio: CGFloat = 1.5
         static let categoryHeight: CGFloat = 70
     }
 
-    private let categories = ["Leathercraft", "Resin Garage", "Talks"]
+    private let categories = ZixyRoomCatalog.categories
     private lazy var categoryButtons = categories.enumerated().map(makeCategoryButton)
     private lazy var pages = categories.enumerated().map(makeRoomPage)
 
@@ -25,16 +27,30 @@ final class ZixyHomeController: ZixyScreenController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
         stack.alignment = .fill
-        stack.distribution = .fillEqually
+        stack.distribution = .fill
+        stack.spacing = 16
         return stack
+    }()
+
+    private let categoryScrollView: UIScrollView = {
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceHorizontal = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.isDirectionalLockEnabled = true
+        return scrollView
     }()
 
     private let pageController = UIPageViewController(
         transitionStyle: .scroll,
         navigationOrientation: .horizontal
     )
+    private let loadingOverlay = ZixyLoadingOverlay()
 
-    private var selectedIndex = 2
+    private var selectedIndex = 0
+    private var isShowingInitialLoading = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -47,13 +63,42 @@ final class ZixyHomeController: ZixyScreenController {
         configureLayout()
         configurePageController()
         updateCategorySelection()
+        configureLoadingOverlay()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(blacklistDidChange),
+            name: .zixyBlacklistDidChange,
+            object: nil
+        )
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if !Self.hasShownInitialLoading {
+            Self.hasShownInitialLoading = true
+            isShowingInitialLoading = true
+            loadingOverlay.show(message: "Loading home")
+        }
+        reloadRooms()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard isShowingInitialLoading else {
+            return
+        }
+        isShowingInitialLoading = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.loadingOverlay.hide()
+        }
     }
 
     private func configureLayout() {
         categoryButtons.forEach(categoryStack.addArrangedSubview)
 
         view.addSubview(bannerButton)
-        view.addSubview(categoryStack)
+        view.addSubview(categoryScrollView)
+        categoryScrollView.addSubview(categoryStack)
 
         addChild(pageController)
         pageController.view.translatesAutoresizingMaskIntoConstraints = false
@@ -74,18 +119,40 @@ final class ZixyHomeController: ZixyScreenController {
                 multiplier: 1 / Layout.bannerAspectRatio
             ),
 
-            categoryStack.topAnchor.constraint(
+            categoryScrollView.topAnchor.constraint(
                 equalTo: bannerButton.bottomAnchor,
                 constant: -8
             ),
-            categoryStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            categoryStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            categoryStack.heightAnchor.constraint(
+            categoryScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            categoryScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            categoryScrollView.heightAnchor.constraint(
                 equalToConstant: Layout.categoryHeight
             ),
 
+            categoryStack.topAnchor.constraint(
+                equalTo: categoryScrollView.contentLayoutGuide.topAnchor
+            ),
+            categoryStack.leadingAnchor.constraint(
+                equalTo: categoryScrollView.contentLayoutGuide.leadingAnchor,
+                constant: 16
+            ),
+            categoryStack.trailingAnchor.constraint(
+                equalTo: categoryScrollView.contentLayoutGuide.trailingAnchor,
+                constant: -16
+            ),
+            categoryStack.bottomAnchor.constraint(
+                equalTo: categoryScrollView.contentLayoutGuide.bottomAnchor
+            ),
+            categoryStack.heightAnchor.constraint(
+                equalTo: categoryScrollView.frameLayoutGuide.heightAnchor
+            ),
+            categoryStack.widthAnchor.constraint(
+                greaterThanOrEqualTo: categoryScrollView.frameLayoutGuide.widthAnchor,
+                constant: -32
+            ),
+
             pageController.view.topAnchor.constraint(
-                equalTo: categoryStack.bottomAnchor,
+                equalTo: categoryScrollView.bottomAnchor,
                 constant: 4
             ),
             pageController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -102,6 +169,28 @@ final class ZixyHomeController: ZixyScreenController {
             direction: .forward,
             animated: false
         )
+    }
+
+    private func configureLoadingOverlay() {
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func reloadRooms() {
+        for (index, category) in categories.enumerated() {
+            pages[index].reload(
+                rooms: ZixySessionStore.homeRooms(category: category)
+            )
+        }
+    }
+
+    @objc private func blacklistDidChange() {
+        reloadRooms()
     }
 
     private func makeCategoryButton(
@@ -123,6 +212,7 @@ final class ZixyHomeController: ZixyScreenController {
         )
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.68
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.addTarget(
             self,
             action: #selector(selectCategory(_:)),
@@ -132,34 +222,13 @@ final class ZixyHomeController: ZixyScreenController {
     }
 
     private func makeRoomPage(
-        index: Int,
+        index _: Int,
         title: String
     ) -> ZixyRoomGridPageController {
         ZixyRoomGridPageController(
             categoryTitle: title,
-            roomTitles: roomTitles(for: index)
+            rooms: ZixySessionStore.homeRooms(category: title)
         )
-    }
-
-    private func roomTitles(for index: Int) -> [String] {
-        switch index {
-        case 0:
-            return [
-                "Leather tooling chat",
-                "Handmade leather room",
-                "Share your latest craft",
-                "Leather makers live"
-            ]
-        case 1:
-            return [
-                "Resin workshop",
-                "Color mixing ideas",
-                "Share your latest craft",
-                "Resin makers live"
-            ]
-        default:
-            return Array(repeating: "Here is the room...", count: 8)
-        }
     }
 
     private func updateCategorySelection() {

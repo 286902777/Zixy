@@ -60,8 +60,11 @@ enum ZixyImageLibrary {
     static let feedTitle = UIImage(named: "zixy_feed_title")
     static let feedReleaseButton = UIImage(named: "zixy_feed_release_button")
     static let feedHeartOutline = UIImage(named: "zixy_feed_heart_outline")
-    static let feedVideoPlay = UIImage(named: "zixy_feed_video_play")
+    static let feedVideoPlay = UIImage(
+        named: "zixy_feed_video_play"
+    )?.withRenderingMode(.alwaysOriginal)
     static let videoLikeOutline = UIImage(named: "zixy_video_like_outline")
+    static let videoLikeFilled = UIImage(systemName: "heart.fill")
     static let videoReport = UIImage(named: "zixy_video_report")
     static let videoComment = UIImage(named: "zixy_video_comment")
     static let videoEdit = UIImage(named: "zixy_video_edit")

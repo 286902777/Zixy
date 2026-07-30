@@ -5,38 +5,13 @@ final class ZixyFollowersController: ZixyScreenController,
     UICollectionViewDelegateFlowLayout {
 
     private struct FollowerItem {
-        let id: Int
+        let email: String
         let name: String
         let image: UIImage?
         var isFollowed: Bool
     }
 
-    private var followers = [
-        FollowerItem(
-            id: 0,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isFollowed: false
-        ),
-        FollowerItem(
-            id: 1,
-            name: "Marry✨",
-            image: ZixyImageLibrary.profileAvatar,
-            isFollowed: false
-        ),
-        FollowerItem(
-            id: 2,
-            name: "Marry✨",
-            image: ZixyImageLibrary.userAvatar,
-            isFollowed: false
-        ),
-        FollowerItem(
-            id: 3,
-            name: "Marry✨",
-            image: ZixyImageLibrary.homeRoomPortrait,
-            isFollowed: false
-        )
-    ]
+    private var followers: [FollowerItem] = []
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -69,6 +44,27 @@ final class ZixyFollowersController: ZixyScreenController,
         super.viewDidLoad()
         configureNavigation(title: "Followers")
         configureCollectionView()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadFollowers()
+    }
+
+    private func loadFollowers() {
+        let currentEmail = ZixySessionStore.currentUserIdentifier
+        followers = ZixyDataStore.shared.followers(for: currentEmail).map {
+            FollowerItem(
+                email: $0.email,
+                name: $0.username,
+                image: ZixyUserAvatarStore.image(for: $0),
+                isFollowed: ZixyDataStore.shared.isFollowing(
+                    $0.email,
+                    from: currentEmail
+                )
+            )
+        }
+        collectionView.reloadData()
     }
 
     private func configureCollectionView() {
@@ -106,14 +102,10 @@ final class ZixyFollowersController: ZixyScreenController,
             isFollowed: follower.isFollowed
         )
         cell.onFollow = { [weak self] in
-            self?.toggleFollow(at: indexPath)
+            self?.removeFollowing(at: indexPath)
         }
         cell.onAvatarTapped = { [weak self] in
-            self?.pushZixyOtherProfile(
-                name: follower.name,
-                image: follower.image,
-                isCurrentUser: false
-            )
+            self?.pushZixyOtherProfile(userEmail: follower.email)
         }
         return cell
     }
@@ -126,16 +118,24 @@ final class ZixyFollowersController: ZixyScreenController,
         CGSize(width: collectionView.bounds.width, height: 74)
     }
 
-    private func toggleFollow(at indexPath: IndexPath) {
+    private func removeFollowing(at indexPath: IndexPath) {
         guard followers.indices.contains(indexPath.item) else {
             return
         }
-        followers[indexPath.item].isFollowed.toggle()
+        let follower = followers[indexPath.item]
+        do {
+            try ZixyDataStore.shared.setFollowing(
+                false,
+                followedEmail: follower.email,
+                followerEmail: ZixySessionStore.currentUserIdentifier
+            )
+        } catch {
+            showToast("Unable to update the follow status.")
+            return
+        }
+        followers[indexPath.item].isFollowed = false
         collectionView.reloadItems(at: [indexPath])
-        let message = followers[indexPath.item].isFollowed
-            ? "Following Marry."
-            : "Unfollowed Marry."
-        showToast(message)
+        showToast("Unfollowed \(follower.name).")
     }
 }
 
@@ -169,18 +169,10 @@ private final class ZixyFollowerCell: UICollectionViewCell {
         avatarView.image = image
         nameLabel.text = name
         followButton.setImage(
-            isFollowed
-                ? UIImage(systemName: "checkmark")
-                : ZixyImageLibrary.followersAdd?.withRenderingMode(
-                    .alwaysOriginal
-                ),
+            ZixyImageLibrary.profileRemove?.withRenderingMode(.alwaysOriginal),
             for: .normal
         )
-        followButton.tintColor = .white
-        followButton.backgroundColor = isFollowed
-            ? UIColor.systemGreen
-            : .clear
-        followButton.layer.cornerRadius = 11
+        followButton.backgroundColor = .clear
         followButton.accessibilityLabel = isFollowed
             ? "Unfollow \(name)"
             : "Follow \(name)"

@@ -180,7 +180,15 @@ final class ZixyMoreActionsController: UIViewController {
 
     @objc private func blockSelected() {
         let action = onBlock
-        dismissSheet(completion: action)
+        let presenter = presentingViewController
+        dismissSheet { [weak presenter] in
+            guard let presenter, let action else {
+                return
+            }
+            let alert = ZixyAlertController(kind: .blockUser)
+            alert.onPrimaryAction = action
+            presenter.present(alert, animated: true)
+        }
     }
 
     @objc private func cancelSelected() {

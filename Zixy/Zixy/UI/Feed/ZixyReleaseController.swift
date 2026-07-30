@@ -1,5 +1,7 @@
+import AVFoundation
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 final class ZixyReleaseController: ZixyScreenController,
     UICollectionViewDataSource,
@@ -16,7 +18,15 @@ final class ZixyReleaseController: ZixyScreenController,
         static let maximumContentCount = 500
     }
 
-    private var selectedImages: [UIImage] = []
+    private enum SelectedMedia {
+        case none
+        case images([UIImage])
+        case video(url: URL, thumbnail: UIImage?)
+    }
+
+    private var selectedMedia: SelectedMedia = .none
+    private var videoThumbnailGenerator: AVAssetImageGenerator?
+    private var isLoadingMedia = false
     private var keyboardObservers: [NSObjectProtocol] = []
     private var isPublishing = false
 
@@ -91,6 +101,7 @@ final class ZixyReleaseController: ZixyScreenController,
         guard isMovingFromParent || navigationController?.isBeingDismissed == true else {
             return
         }
+        removeStagedVideo()
         keyboardObservers.forEach(NotificationCenter.default.removeObserver)
         keyboardObservers.removeAll()
     }
@@ -359,22 +370,43 @@ final class ZixyReleaseController: ZixyScreenController,
         contentPlaceholderLabel.isHidden = !contentTextView.text.isEmpty
     }
 
-    private var showsAddPhotoCell: Bool {
-        selectedImages.count < Layout.maximumPhotoCount
+    private var selectedImages: [UIImage] {
+        guard case let .images(images) = selectedMedia else {
+            return []
+        }
+        return images
+    }
+
+    private var showsAddMediaCell: Bool {
+        switch selectedMedia {
+        case .none:
+            return true
+        case let .images(images):
+            return images.count < Layout.maximumPhotoCount
+        case .video:
+            return false
+        }
     }
 
     func collectionView(
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        selectedImages.count + (showsAddPhotoCell ? 1 : 0)
+        switch selectedMedia {
+        case .none:
+            return 1
+        case let .images(images):
+            return images.count + (showsAddMediaCell ? 1 : 0)
+        case .video:
+            return 1
+        }
     }
 
     func collectionView(
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
-        if showsAddPhotoCell && indexPath.item == 0 {
+        if showsAddMediaCell && indexPath.item == 0 {
             return collectionView.dequeueReusableCell(
                 withReuseIdentifier: ZixyReleaseAddPhotoCell.reuseIdentifier,
                 for: indexPath
@@ -387,13 +419,23 @@ final class ZixyReleaseController: ZixyScreenController,
         ) as? ZixyReleasePhotoCell else {
             return UICollectionViewCell()
         }
-        let imageIndex = showsAddPhotoCell
-            ? indexPath.item - 1
-            : indexPath.item
-        guard selectedImages.indices.contains(imageIndex) else {
+        switch selectedMedia {
+        case let .images(images):
+            let imageIndex = showsAddMediaCell
+                ? indexPath.item - 1
+                : indexPath.item
+            guard images.indices.contains(imageIndex) else {
+                return cell
+            }
+            cell.configure(image: images[imageIndex], isVideo: false)
+        case let .video(_, thumbnail):
+            cell.configure(
+                image: thumbnail ?? ZixyImageLibrary.releaseAddPhoto,
+                isVideo: true
+            )
+        case .none:
             return cell
         }
-        cell.configure(image: selectedImages[imageIndex])
         cell.onRemove = { [weak self, weak cell] in
             guard
                 let self,
@@ -402,7 +444,7 @@ final class ZixyReleaseController: ZixyScreenController,
             else {
                 return
             }
-            removeImage(atCollectionIndex: currentPath.item)
+            removeMedia(atCollectionIndex: currentPath.item)
         }
         return cell
     }
@@ -411,10 +453,10 @@ final class ZixyReleaseController: ZixyScreenController,
         _ collectionView: UICollectionView,
         didSelectItemAt indexPath: IndexPath
     ) {
-        guard showsAddPhotoCell && indexPath.item == 0 else {
+        guard showsAddMediaCell && indexPath.item == 0 else {
             return
         }
-        selectPhotos()
+        selectMedia()
     }
 
     func collectionView(
@@ -425,17 +467,30 @@ final class ZixyReleaseController: ZixyScreenController,
         CGSize(width: Layout.photoWidth, height: Layout.photoHeight)
     }
 
-    private func selectPhotos() {
-        let remainingCount = Layout.maximumPhotoCount - selectedImages.count
-        guard remainingCount > 0 else {
-            showToast("You can select up to three photos.")
+    private func selectMedia() {
+        guard !isLoadingMedia else {
+            showToast("Please wait while the media loads.")
             return
         }
         view.endEditing(true)
 
         var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .images
-        configuration.selectionLimit = remainingCount
+        switch selectedMedia {
+        case .none:
+            configuration.filter = .any(of: [.images, .videos])
+            configuration.selectionLimit = Layout.maximumPhotoCount
+        case let .images(images):
+            let remainingCount = Layout.maximumPhotoCount - images.count
+            guard remainingCount > 0 else {
+                showToast("You can select up to three photos.")
+                return
+            }
+            configuration.filter = .images
+            configuration.selectionLimit = remainingCount
+        case .video:
+            showToast("Remove the video before selecting other media.")
+            return
+        }
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self
         present(picker, animated: true)
@@ -450,34 +505,176 @@ final class ZixyReleaseController: ZixyScreenController,
             return
         }
 
-        for result in results {
-            let provider = result.itemProvider
-            guard provider.canLoadObject(ofClass: UIImage.self) else {
-                continue
+        let videoResults = results.filter {
+            $0.itemProvider.hasItemConformingToTypeIdentifier(
+                UTType.movie.identifier
+            )
+        }
+        let imageResults = results.filter {
+            $0.itemProvider.canLoadObject(ofClass: UIImage.self)
+        }
+
+        guard videoResults.isEmpty || imageResults.isEmpty else {
+            showToast("A post can contain photos or one video, not both.")
+            return
+        }
+        if !videoResults.isEmpty {
+            guard videoResults.count == 1, results.count == 1 else {
+                showToast("You can select only one video.")
+                return
             }
-            provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+            guard case .none = selectedMedia else {
+                showToast("Remove the photos before selecting a video.")
+                return
+            }
+            isLoadingMedia = true
+            loadVideo(from: videoResults[0].itemProvider)
+            return
+        }
+
+        guard imageResults.count == results.count else {
+            showToast("The selected media is not supported.")
+            return
+        }
+        isLoadingMedia = true
+        loadImages(from: imageResults)
+    }
+
+    private func loadImages(from results: [PHPickerResult]) {
+        var remainingResultCount = results.count
+        var loadedImages: [UIImage] = []
+        for result in results {
+            result.itemProvider.loadObject(
+                ofClass: UIImage.self
+            ) { [weak self] object, _ in
                 DispatchQueue.main.async {
-                    guard
-                        let self,
-                        let image = object as? UIImage,
-                        self.selectedImages.count < Layout.maximumPhotoCount
-                    else {
+                    guard let self else {
                         return
                     }
-                    self.selectedImages.append(image)
+                    if let image = object as? UIImage {
+                        loadedImages.append(image)
+                    }
+                    remainingResultCount -= 1
+                    guard remainingResultCount == 0 else {
+                        return
+                    }
+                    self.isLoadingMedia = false
+                    var images = self.selectedImages
+                    images.append(contentsOf: loadedImages)
+                    images = Array(
+                        images.prefix(Layout.maximumPhotoCount)
+                    )
+                    guard !images.isEmpty else {
+                        self.showToast("Unable to load the selected photos.")
+                        return
+                    }
+                    self.selectedMedia = .images(images)
                     self.photoCollectionView.reloadData()
                 }
             }
         }
     }
 
-    private func removeImage(atCollectionIndex index: Int) {
-        let imageIndex = showsAddPhotoCell ? index - 1 : index
-        guard selectedImages.indices.contains(imageIndex) else {
+    private func loadVideo(from provider: NSItemProvider) {
+        provider.loadFileRepresentation(
+            forTypeIdentifier: UTType.movie.identifier
+        ) { [weak self] sourceURL, error in
+            guard let sourceURL, error == nil else {
+                DispatchQueue.main.async {
+                    self?.isLoadingMedia = false
+                    self?.showToast("Unable to load the selected video.")
+                }
+                return
+            }
+
+            let stagedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "zixy_release_\(UUID().uuidString.lowercased()).mov"
+                )
+            do {
+                try FileManager.default.copyItem(
+                    at: sourceURL,
+                    to: stagedURL
+                )
+                DispatchQueue.main.async {
+                    guard let self else {
+                        try? FileManager.default.removeItem(at: stagedURL)
+                        return
+                    }
+                    self.isLoadingMedia = false
+                    self.selectedMedia = .video(
+                        url: stagedURL,
+                        thumbnail: nil
+                    )
+                    self.photoCollectionView.reloadData()
+                    self.generateVideoThumbnail(for: stagedURL)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.isLoadingMedia = false
+                    self?.showToast("Unable to load the selected video.")
+                }
+            }
+        }
+    }
+
+    private func generateVideoThumbnail(for url: URL) {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        videoThumbnailGenerator = generator
+        generator.generateCGImagesAsynchronously(
+            forTimes: [NSValue(time: .zero)]
+        ) { [weak self] _, image, _, result, _ in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                self.videoThumbnailGenerator = nil
+                guard
+                    result == .succeeded,
+                    let image,
+                    case let .video(selectedURL, _) = self.selectedMedia,
+                    selectedURL == url
+                else {
+                    return
+                }
+                self.selectedMedia = .video(
+                    url: url,
+                    thumbnail: UIImage(cgImage: image)
+                )
+                self.photoCollectionView.reloadData()
+            }
+        }
+    }
+
+    private func removeMedia(atCollectionIndex index: Int) {
+        switch selectedMedia {
+        case let .images(images):
+            let imageIndex = showsAddMediaCell ? index - 1 : index
+            guard images.indices.contains(imageIndex) else {
+                return
+            }
+            var updatedImages = images
+            updatedImages.remove(at: imageIndex)
+            selectedMedia = updatedImages.isEmpty
+                ? .none
+                : .images(updatedImages)
+        case .video:
+            removeStagedVideo()
+            selectedMedia = .none
+        case .none:
             return
         }
-        selectedImages.remove(at: imageIndex)
         photoCollectionView.reloadData()
+    }
+
+    private func removeStagedVideo() {
+        videoThumbnailGenerator?.cancelAllCGImageGeneration()
+        videoThumbnailGenerator = nil
+        guard case let .video(url, _) = selectedMedia else {
+            return
+        }
+        try? FileManager.default.removeItem(at: url)
     }
 
     func textField(
@@ -542,10 +739,15 @@ final class ZixyReleaseController: ZixyScreenController,
         let content = contentTextView.text
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !selectedImages.isEmpty else {
-            showToast("Select at least one photo.")
-            return
+        switch selectedMedia {
+        case .none:
+            showToast("Select photos or a video.")
+        case .images, .video:
+            publishPost(title: title, content: content)
         }
+    }
+
+    private func publishPost(title: String, content: String) {
         guard !title.isEmpty else {
             showToast("Enter a title.")
             return
@@ -554,20 +756,68 @@ final class ZixyReleaseController: ZixyScreenController,
             showToast("Enter post content.")
             return
         }
+        guard
+            ZixySessionStore.allowsSocialInteraction,
+            ZixyDataStore.shared.currentUser() != nil
+        else {
+            showToast("Sign in to publish posts.")
+            return
+        }
 
         isPublishing = true
         releaseButton.isEnabled = false
         loadingView.show()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }
-            isPublishing = false
-            releaseButton.isEnabled = true
-            loadingView.hide()
-            showToast("Post released.")
+            var mediaReferences: [String] = []
+            do {
+                switch selectedMedia {
+                case let .images(images):
+                    mediaReferences = try ZixyPostMediaStore.save(images)
+                case let .video(url, _):
+                    mediaReferences = [
+                        try ZixyPostMediaStore.saveVideo(from: url)
+                    ]
+                case .none:
+                    throw ZixyDataStoreError.unavailable
+                }
+                let post = try ZixyDataStore.shared.createPost(
+                    title: title,
+                    body: content,
+                    mediaNames: mediaReferences
+                )
+                NotificationCenter.default.post(
+                    name: .zixyPostDidCreate,
+                    object: post
+                )
+                finishPublishing()
+                if let navigationController,
+                   navigationController.viewControllers.count > 1 {
+                    let previousController = navigationController.viewControllers[
+                        navigationController.viewControllers.count - 2
+                    ]
+                    navigationController.popViewController(animated: true)
+                    previousController.showToast("Post published.")
+                } else {
+                    showToast("Post published.")
+                }
+            } catch {
+                for reference in mediaReferences {
+                    ZixyPostMediaStore.remove(reference: reference)
+                }
+                finishPublishing()
+                showToast("Unable to publish the post.")
+            }
         }
+    }
+
+    private func finishPublishing() {
+        isPublishing = false
+        releaseButton.isEnabled = true
+        loadingView.hide()
     }
 
     @objc private func handleKeyboardChange(_ notification: Notification) {
@@ -612,7 +862,7 @@ private final class ZixyReleaseAddPhotoCell: UICollectionViewCell {
             imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
         isAccessibilityElement = true
-        accessibilityLabel = "Add photos"
+        accessibilityLabel = "Add photos or a video"
         accessibilityTraits = .button
     }
 
@@ -629,6 +879,9 @@ private final class ZixyReleasePhotoCell: UICollectionViewCell {
 
     private let imageView = UIImageView()
     private let removeButton = UIButton(type: .custom)
+    private let videoIndicator = UIImageView(
+        image: UIImage(systemName: "play.circle.fill")
+    )
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -651,13 +904,30 @@ private final class ZixyReleasePhotoCell: UICollectionViewCell {
             for: .touchUpInside
         )
 
+        videoIndicator.translatesAutoresizingMaskIntoConstraints = false
+        videoIndicator.tintColor = .white
+        videoIndicator.contentMode = .scaleAspectFit
+        videoIndicator.isHidden = true
+
         contentView.addSubview(imageView)
+        contentView.addSubview(videoIndicator)
         contentView.addSubview(removeButton)
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            videoIndicator.centerXAnchor.constraint(
+                equalTo: contentView.centerXAnchor
+            ),
+            videoIndicator.centerYAnchor.constraint(
+                equalTo: contentView.centerYAnchor
+            ),
+            videoIndicator.widthAnchor.constraint(equalToConstant: 42),
+            videoIndicator.heightAnchor.constraint(
+                equalTo: videoIndicator.widthAnchor
+            ),
 
             removeButton.trailingAnchor.constraint(
                 equalTo: contentView.trailingAnchor,
@@ -679,11 +949,17 @@ private final class ZixyReleasePhotoCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageView.image = nil
+        videoIndicator.isHidden = true
         onRemove = nil
     }
 
-    func configure(image: UIImage) {
+    func configure(image: UIImage?, isVideo: Bool) {
         imageView.image = image
+        videoIndicator.isHidden = !isVideo
+        accessibilityLabel = isVideo ? "Selected video" : "Selected photo"
+        removeButton.accessibilityLabel = isVideo
+            ? "Remove video"
+            : "Remove photo"
     }
 
     @objc private func removePhoto() {

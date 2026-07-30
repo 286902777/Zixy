@@ -407,7 +407,7 @@ final class ZixyReportController: ZixyScreenController {
 
         view.endEditing(true)
         setSubmitting(true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }

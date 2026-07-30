@@ -4,12 +4,7 @@ final class ZixyMessageRoomsController: UIViewController,
     UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout {
 
-    private let roomTitles = [
-        "Here is the room...",
-        "Here is the room...",
-        "Here is the room...",
-        "Here is the room..."
-    ]
+    private var rooms: [ZixyRoomRecord] = []
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -44,13 +39,41 @@ final class ZixyMessageRoomsController: UIViewController,
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(roomMembershipDidChange),
+            name: .zixyRoomMembershipDidChange,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(roomMembershipDidChange),
+            name: .zixyBlacklistDidChange,
+            object: nil
+        )
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reloadRooms()
+    }
+
+    private func reloadRooms() {
+        rooms = ZixyDataStore.shared.rooms(
+            for: ZixySessionStore.currentUserIdentifier
+        )
+        collectionView.reloadData()
+    }
+
+    @objc private func roomMembershipDidChange() {
+        reloadRooms()
     }
 
     func collectionView(
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        roomTitles.count
+        rooms.count
     }
 
     func collectionView(
@@ -63,9 +86,11 @@ final class ZixyMessageRoomsController: UIViewController,
         ) as? ZixyMessageRoomCell else {
             return UICollectionViewCell()
         }
+        let room = rooms[indexPath.item]
         cell.configure(
-            title: roomTitles[indexPath.item],
-            listenerCount: 832
+            title: room.title,
+            listenerCount: room.members.count,
+            image: ZixyRoomCoverStore.image(reference: room.coverAssetName)
         )
         return cell
     }
@@ -83,9 +108,7 @@ final class ZixyMessageRoomsController: UIViewController,
         _ collectionView: UICollectionView,
         didSelectItemAt indexPath: IndexPath
     ) {
-        let controller = ZixyRoomDetailController(
-            roomTitle: roomTitles[indexPath.item]
-        )
+        let controller = ZixyRoomDetailController(room: rooms[indexPath.item])
         controller.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -114,7 +137,8 @@ private final class ZixyMessageRoomCell: UICollectionViewCell {
         gradientLayer.frame = contentView.bounds
     }
 
-    func configure(title: String, listenerCount: Int) {
+    func configure(title: String, listenerCount: Int, image: UIImage?) {
+        imageView.image = image ?? ZixyImageLibrary.homeRoomPortrait
         titleLabel.text = title
         badge.configure(count: listenerCount)
         accessibilityLabel = "\(title), \(listenerCount) listeners"

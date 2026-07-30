@@ -4,34 +4,7 @@ final class ZixyChatListController: UIViewController,
     UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout {
 
-    private struct ChatItem {
-        let name: String
-        let message: String
-        let image: UIImage?
-    }
-
-    private let items = [
-        ChatItem(
-            name: "Sally",
-            message: "Hey, how are you doing?",
-            image: ZixyImageLibrary.userAvatar
-        ),
-        ChatItem(
-            name: "Katrina✨Ray",
-            message: "hello man, are you single?",
-            image: ZixyImageLibrary.chatParticipantAvatar
-        ),
-        ChatItem(
-            name: "🔥Mamazik🔥",
-            message: "You are a handsome guy.",
-            image: ZixyImageLibrary.userAvatar
-        ),
-        ChatItem(
-            name: "🍷Alice🦄",
-            message: "hi, what's your favorite sport?",
-            image: ZixyImageLibrary.homeRoomPortrait
-        )
-    ]
+    private var items: [ZixyChatSummaryRecord] = []
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -67,6 +40,14 @@ final class ZixyChatListController: UIViewController,
         ])
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        items = ZixyDataStore.shared.chatSummaries(
+            for: ZixySessionStore.currentUserIdentifier
+        )
+        collectionView.reloadData()
+    }
+
     func collectionView(
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
@@ -85,17 +66,15 @@ final class ZixyChatListController: UIViewController,
             return UICollectionViewCell()
         }
         let item = items[indexPath.item]
+        let image = ZixyUserAvatarStore.image(for: item.participant)
         cell.configure(
-            image: item.image,
-            name: item.name,
-            message: item.message
+            image: image,
+            name: item.participant.username,
+            message: item.lastMessage,
+            date: item.updatedAt
         )
         cell.onAvatarTapped = { [weak self] in
-            self?.pushZixyOtherProfile(
-                name: item.name,
-                image: item.image,
-                isCurrentUser: false
-            )
+            self?.pushZixyOtherProfile(userEmail: item.participant.email)
         }
         return cell
     }
@@ -114,9 +93,12 @@ final class ZixyChatListController: UIViewController,
     ) {
         let item = items[indexPath.item]
         let controller = ZixyConversationController(
-            participantName: item.name,
-            participantImage: item.image,
-            isCurrentUser: false
+            participantName: item.participant.username,
+            participantImage: ZixyUserAvatarStore.image(
+                for: item.participant
+            ),
+            isCurrentUser: false,
+            participantEmail: item.participant.email
         )
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -147,12 +129,20 @@ private final class ZixyChatCell: UICollectionViewCell {
         onAvatarTapped = nil
     }
 
-    func configure(image: UIImage?, name: String, message: String) {
+    func configure(
+        image: UIImage?,
+        name: String,
+        message: String,
+        date: Date
+    ) {
         avatarView.image = image
         nameLabel.text = name
         messageLabel.text = message
-        timeLabel.text = "Just now"
-        accessibilityLabel = "\(name), \(message), Just now"
+        timeLabel.text = Self.relativeFormatter.localizedString(
+            for: date,
+            relativeTo: Date()
+        )
+        accessibilityLabel = "\(name), \(message), \(timeLabel.text ?? "")"
     }
 
     private func configureLayout() {
@@ -218,4 +208,10 @@ private final class ZixyChatCell: UICollectionViewCell {
     @objc private func avatarTapped() {
         onAvatarTapped?()
     }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
 }

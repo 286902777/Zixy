@@ -19,6 +19,12 @@ final class ZixyMessagesController: ZixyScreenController,
 
     private let chatButton = ZixyMessagesSegmentButton(title: "Chats")
     private let roomsButton = ZixyMessagesSegmentButton(title: "Rooms")
+    private let aiRow = ZixyPinnedMessageRow(
+        image: ZixyImageLibrary.messagesAI,
+        title: "Zixy Ai",
+        message: "Hey! What's up😊?",
+        showsTime: false
+    )
 
     private lazy var pageControllers: [UIViewController] = [
         ZixyChatListController(),
@@ -38,6 +44,11 @@ final class ZixyMessagesController: ZixyScreenController,
         configurePinnedRows()
         configurePageController()
         updateSelection(for: .chats, animated: false)
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshAIMessage()
     }
 
     private func configureTitle() {
@@ -60,17 +71,13 @@ final class ZixyMessagesController: ZixyScreenController,
         let notificationsRow = ZixyPinnedMessageRow(
             image: ZixyImageLibrary.messagesNotifications,
             title: "Notifications",
-            message: "Hey, how are you doing?"
+            message: "",
+            showsTime: false
         )
         notificationsRow.addTarget(
             self,
             action: #selector(showNotifications),
             for: .touchUpInside
-        )
-        let aiRow = ZixyPinnedMessageRow(
-            image: ZixyImageLibrary.messagesAI,
-            title: "Zixy Ai",
-            message: "Hey, how are you doing?"
         )
         aiRow.addTarget(
             self,
@@ -109,6 +116,12 @@ final class ZixyMessagesController: ZixyScreenController,
 
         chatButton.addTarget(self, action: #selector(showChats), for: .touchUpInside)
         roomsButton.addTarget(self, action: #selector(showRooms), for: .touchUpInside)
+    }
+
+    private func refreshAIMessage() {
+        aiRow.updateMessage(
+            ZixyAIChatHistoryStore.latestMessage ?? "Hey! What's up😊?"
+        )
     }
 
     private func configurePageController() {
@@ -279,7 +292,18 @@ private final class ZixyMessagesSegmentButton: UIButton {
 
 private final class ZixyPinnedMessageRow: UIControl {
 
-    init(image: UIImage?, title: String, message: String) {
+    private let messageLabel = UILabel()
+    private let showsTime: Bool
+    private let title: String
+
+    init(
+        image: UIImage?,
+        title: String,
+        message: String,
+        showsTime: Bool = true
+    ) {
+        self.title = title
+        self.showsTime = showsTime
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
@@ -298,7 +322,6 @@ private final class ZixyPinnedMessageRow: UIControl {
             alpha: 1
         )
 
-        let messageLabel = UILabel()
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.text = message
         messageLabel.font = ZixyFontBook.bold(size: 14, relativeTo: .subheadline)
@@ -306,7 +329,8 @@ private final class ZixyPinnedMessageRow: UIControl {
 
         let timeLabel = UILabel()
         timeLabel.translatesAutoresizingMaskIntoConstraints = false
-        timeLabel.text = "Just now"
+        timeLabel.text = showsTime ? "Just now" : nil
+        timeLabel.isHidden = !showsTime
         timeLabel.font = ZixyFontBook.bold(size: 12, relativeTo: .caption1)
         timeLabel.textColor = .systemGray2
 
@@ -339,11 +363,18 @@ private final class ZixyPinnedMessageRow: UIControl {
         ])
         isAccessibilityElement = true
         accessibilityTraits = .button
-        accessibilityLabel = "\(title), \(message), Just now"
+        updateMessage(message)
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    func updateMessage(_ message: String) {
+        messageLabel.text = message
+        accessibilityLabel = showsTime
+            ? "\(title), \(message), Just now"
+            : "\(title), \(message)"
     }
 
     override var isHighlighted: Bool {

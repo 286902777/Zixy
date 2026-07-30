@@ -16,16 +16,11 @@ final class ZixyMyRoomController: ZixyScreenController {
         static let saveButtonHeight: CGFloat = 74
     }
 
-    private static var savedCover: UIImage?
-    private static var savedRoomName = "Here is the room"
-    private static var hasSavedRoom = false
-
-    static var currentMode: Mode {
-        hasSavedRoom ? .edit : .create
-    }
-
     private var mode: Mode
+    private var room: ZixyRoomRecord?
     private var selectedCover: UIImage?
+    private var selectedCoverReference: String?
+    private var selectedCoverIsNew = false
     private var keyboardObservers: [NSObjectProtocol] = []
     private var isProcessing = false
 
@@ -43,11 +38,16 @@ final class ZixyMyRoomController: ZixyScreenController {
     )
     private let loadingView = ZixyMyRoomLoadingView()
 
-    init(mode: Mode = .create) {
-        self.mode = mode
-        selectedCover = mode == .edit
-            ? Self.savedCover ?? ZixyImageLibrary.myRoomCover
-            : nil
+    init() {
+        let ownedRoom = ZixyDataStore.shared.ownedRoom(
+            for: ZixySessionStore.currentUserIdentifier
+        )
+        room = ownedRoom
+        mode = ownedRoom == nil ? .create : .edit
+        selectedCoverReference = ownedRoom?.coverAssetName
+        selectedCover = ownedRoom.flatMap {
+            ZixyRoomCoverStore.image(reference: $0.coverAssetName)
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -415,7 +415,7 @@ final class ZixyMyRoomController: ZixyScreenController {
             alpha: 1
         ).cgColor
         if mode == .edit, roomNameField.text?.isEmpty != false {
-            roomNameField.text = Self.savedRoomName
+            roomNameField.text = room?.title
         }
         configureNavigation(
             title: "My Room",
@@ -449,6 +449,8 @@ final class ZixyMyRoomController: ZixyScreenController {
             return
         }
         selectedCover = nil
+        selectedCoverReference = nil
+        selectedCoverIsNew = false
         applyMode()
     }
 
@@ -457,7 +459,7 @@ final class ZixyMyRoomController: ZixyScreenController {
             return
         }
         view.endEditing(true)
-        guard selectedCover != nil else {
+        guard let selectedCover else {
             showToast("Choose a room cover.")
             return
         }
@@ -472,22 +474,54 @@ final class ZixyMyRoomController: ZixyScreenController {
         saveButton.isEnabled = false
         deleteButton.isEnabled = false
         loadingView.show(message: mode == .create ? "Creating room" : "Saving room")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }
-            let message = mode == .create ? "Room created." : "Room saved."
-            Self.savedCover = selectedCover
-            Self.savedRoomName = roomName
-            Self.hasSavedRoom = true
-            mode = .edit
-            applyMode()
-            finishProcessing(message: message)
+            let wasCreating = mode == .create
+            let previousCoverReference = room?.coverAssetName
+            var newlySavedReference: String?
+            do {
+                let coverReference: String
+                if selectedCoverIsNew || selectedCoverReference == nil {
+                    let reference = try ZixyRoomCoverStore.save(selectedCover)
+                    newlySavedReference = reference
+                    coverReference = reference
+                } else if let selectedCoverReference {
+                    coverReference = selectedCoverReference
+                } else {
+                    throw ZixyDataStoreError.unavailable
+                }
+
+                let savedRoom = try ZixyDataStore.shared.saveOwnedRoom(
+                    id: room?.id,
+                    title: roomName,
+                    coverAssetName: coverReference,
+                    ownerEmail: ZixySessionStore.currentUserIdentifier
+                )
+                if let previousCoverReference,
+                   previousCoverReference != coverReference {
+                    ZixyRoomCoverStore.remove(reference: previousCoverReference)
+                }
+                room = savedRoom
+                mode = .edit
+                selectedCoverReference = savedRoom.coverAssetName
+                selectedCoverIsNew = false
+                applyMode()
+                finishProcessing(
+                    message: wasCreating ? "Room created." : "Room saved."
+                )
+            } catch {
+                if let newlySavedReference {
+                    ZixyRoomCoverStore.remove(reference: newlySavedReference)
+                }
+                finishProcessing(message: "Unable to save the room.")
+            }
         }
     }
 
     @objc private func deleteRoom() {
-        guard mode == .edit, !isProcessing else {
+        guard mode == .edit, let room, !isProcessing else {
             return
         }
         view.endEditing(true)
@@ -495,18 +529,27 @@ final class ZixyMyRoomController: ZixyScreenController {
         saveButton.isEnabled = false
         deleteButton.isEnabled = false
         loadingView.show(message: "Deleting room")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             guard let self else {
                 return
             }
-            mode = .create
-            selectedCover = nil
-            roomNameField.text = nil
-            Self.savedCover = nil
-            Self.savedRoomName = "Here is the room"
-            Self.hasSavedRoom = false
-            applyMode()
-            finishProcessing(message: "Room deleted.")
+            do {
+                try ZixyDataStore.shared.deleteOwnedRoom(
+                    id: room.id,
+                    ownerEmail: ZixySessionStore.currentUserIdentifier
+                )
+                ZixyRoomCoverStore.remove(reference: room.coverAssetName)
+                self.room = nil
+                mode = .create
+                selectedCover = nil
+                selectedCoverReference = nil
+                selectedCoverIsNew = false
+                roomNameField.text = nil
+                applyMode()
+                finishProcessing(message: "Room deleted.")
+            } catch {
+                finishProcessing(message: "Unable to delete the room.")
+            }
         }
     }
 
@@ -540,6 +583,8 @@ extension ZixyMyRoomController:
                     return
                 }
                 self.selectedCover = image
+                self.selectedCoverReference = nil
+                self.selectedCoverIsNew = true
                 self.applyMode()
             }
         }

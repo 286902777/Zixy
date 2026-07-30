@@ -23,6 +23,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
 
+        try? ZixyDataStore.shared.prepareIfNeeded()
         let hasAcceptedEULA = UserDefaults.standard.bool(
             forKey: ZixyTermsController.acceptedDefaultsKey
         )

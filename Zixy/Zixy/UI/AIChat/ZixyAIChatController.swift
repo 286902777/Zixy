@@ -26,9 +26,7 @@ final class ZixyAIChatController: UIViewController {
     }
 
     private let responder = ZixyCraftKnowledgeResponder()
-    private var messages = [
-        Message(kind: .assistant, text: "Hey! What's up😊?")
-    ]
+    private var messages: [Message] = []
     private var isReplying = false
     private var inputBottomConstraint: NSLayoutConstraint?
 
@@ -87,7 +85,7 @@ final class ZixyAIChatController: UIViewController {
             blue: 1,
             alpha: 1
         )
-        field.returnKeyType = .done
+        field.returnKeyType = .send
         field.clearButtonMode = .whileEditing
         field.accessibilityLabel = "Craft question"
         return field
@@ -103,6 +101,7 @@ final class ZixyAIChatController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        loadStoredMessages()
         configureLayout()
         configureTableView()
         configureInteractions()
@@ -114,6 +113,17 @@ final class ZixyAIChatController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: false)
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
         navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        guard !isReplying else {
+            return
+        }
+        loadStoredMessages()
+        tableView.reloadData()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        tableView.layoutIfNeeded()
+        scrollToLatestMessage(animated: false)
     }
 
     deinit {
@@ -266,6 +276,25 @@ final class ZixyAIChatController: UIViewController {
         )
     }
 
+    private func loadStoredMessages() {
+        var records = ZixyAIChatHistoryStore.records()
+        if records.isEmpty {
+            let welcome = ZixyAIChatHistoryRecord(
+                role: .assistant,
+                text: "Hey! What's up😊?",
+                createdAt: Date()
+            )
+            records = [welcome]
+            ZixyAIChatHistoryStore.replace(with: records)
+        }
+        messages = records.map {
+            Message(
+                kind: $0.role == .user ? .user : .assistant,
+                text: $0.text
+            )
+        }
+    }
+
     private func finishReply(with text: String) {
         guard isReplying else {
             return
@@ -274,6 +303,7 @@ final class ZixyAIChatController: UIViewController {
             messages.removeLast()
         }
         messages.append(Message(kind: .assistant, text: text))
+        ZixyAIChatHistoryStore.append(role: .assistant, text: text)
         isReplying = false
         sendButton.isEnabled = true
         sendButton.alpha = 1
@@ -300,6 +330,7 @@ final class ZixyAIChatController: UIViewController {
         sendButton.isEnabled = false
         sendButton.alpha = 0.45
         messages.append(Message(kind: .user, text: text))
+        ZixyAIChatHistoryStore.append(role: .user, text: text)
         messages.append(Message(kind: .loading, text: "Thinking..."))
         messageField.text = nil
         tableView.reloadData()

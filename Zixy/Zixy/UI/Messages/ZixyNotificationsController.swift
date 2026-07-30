@@ -5,32 +5,17 @@ final class ZixyNotificationsController: ZixyScreenController,
     UICollectionViewDelegateFlowLayout {
 
     private struct NotificationItem {
+        let email: String
         let name: String
         let message: String
+        let postID: String
+        let postTitle: String
+        let mediaName: String
         let avatar: UIImage?
         let postImage: UIImage?
     }
 
-    private let notifications = [
-        NotificationItem(
-            name: "Katrina✨Ray",
-            message: "The two men appeared out of...",
-            avatar: ZixyImageLibrary.userAvatar,
-            postImage: ZixyImageLibrary.homeRoomPortrait
-        ),
-        NotificationItem(
-            name: "Katrina✨Ray",
-            message: "liked your post",
-            avatar: ZixyImageLibrary.userAvatar,
-            postImage: ZixyImageLibrary.homeRoomPortrait
-        ),
-        NotificationItem(
-            name: "Katrina✨Ray",
-            message: "The two men appeared out of...",
-            avatar: ZixyImageLibrary.userAvatar,
-            postImage: ZixyImageLibrary.homeRoomPortrait
-        )
-    ]
+    private var notifications: [NotificationItem] = []
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
@@ -65,6 +50,75 @@ final class ZixyNotificationsController: ZixyScreenController,
         configureCollectionView()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadNotifications()
+    }
+
+    private func loadNotifications() {
+        let currentUserEmail = ZixySessionStore.currentUserIdentifier
+        let allPosts = ZixyDataStore.shared.posts()
+        var items: [NotificationItem] = []
+
+        for post in allPosts where post.author.email != currentUserEmail {
+            items.append(
+                makeNotification(
+                    actor: post.author,
+                    message: "shared a post",
+                    post: post
+                )
+            )
+        }
+
+        for post in allPosts where post.author.email == currentUserEmail {
+            let likers = ZixyDataStore.shared.usersWhoLiked(postID: post.id)
+                .filter { $0.email != currentUserEmail }
+            items.append(
+                contentsOf: likers.map {
+                    makeNotification(
+                        actor: $0,
+                        message: "liked your post",
+                        post: post
+                    )
+                }
+            )
+
+            let comments = ZixyDataStore.shared.comments(for: post.id)
+                .filter { $0.author.email != currentUserEmail }
+            items.append(
+                contentsOf: comments.map {
+                    makeNotification(
+                        actor: $0.author,
+                        message: "commented: \($0.body)",
+                        post: post
+                    )
+                }
+            )
+        }
+
+        notifications = items
+        collectionView.reloadData()
+    }
+
+    private func makeNotification(
+        actor: ZixyUserRecord,
+        message: String,
+        post: ZixyPostRecord
+    ) -> NotificationItem {
+        NotificationItem(
+            email: actor.email,
+            name: actor.username,
+            message: message,
+            postID: post.id,
+            postTitle: post.title,
+            mediaName: post.primaryMediaName,
+            avatar: ZixyUserAvatarStore.image(for: actor),
+            postImage: ZixyPostMediaStore.image(
+                reference: post.primaryMediaName
+            )
+        )
+    }
+
     private func configureCollectionView() {
         contentView.addSubview(collectionView)
         NSLayoutConstraint.activate([
@@ -97,15 +151,12 @@ final class ZixyNotificationsController: ZixyScreenController,
         cell.configure(
             name: item.name,
             message: item.message,
+            postTitle: item.postTitle,
             avatar: item.avatar,
             postImage: item.postImage
         )
         cell.onAvatarTapped = { [weak self] in
-            self?.pushZixyOtherProfile(
-                name: item.name,
-                image: item.avatar,
-                isCurrentUser: false
-            )
+            self?.pushZixyOtherProfile(userEmail: item.email)
         }
         return cell
     }
@@ -123,7 +174,29 @@ final class ZixyNotificationsController: ZixyScreenController,
         didSelectItemAt indexPath: IndexPath
     ) {
         collectionView.deselectItem(at: indexPath, animated: true)
-        showToast("Notification opened.")
+        guard notifications.indices.contains(indexPath.item) else {
+            return
+        }
+        let item = notifications[indexPath.item]
+        let media: ZixyVideoDetailController.Media
+        let videoExtensions = Set(["mp4", "mov", "m4v"])
+        let isVideo = videoExtensions.contains(
+            (item.mediaName as NSString).pathExtension.lowercased()
+        )
+        if isVideo,
+           let url = ZixyPostMediaStore.mediaURL(
+               reference: item.mediaName
+           ) {
+            media = .video(url: url, poster: item.postImage)
+        } else {
+            media = .image(item.postImage)
+        }
+        push(
+            ZixyVideoDetailController(
+                postID: item.postID,
+                media: media
+            )
+        )
     }
 }
 
@@ -135,6 +208,7 @@ private final class ZixyNotificationCell: UICollectionViewCell {
 
     private let avatarView = UIImageView()
     private let nameLabel = UILabel()
+    private let postTitleLabel = UILabel()
     private let messageLabel = UILabel()
     private let postImageView = UIImageView()
 
@@ -155,14 +229,16 @@ private final class ZixyNotificationCell: UICollectionViewCell {
     func configure(
         name: String,
         message: String,
+        postTitle: String,
         avatar: UIImage?,
         postImage: UIImage?
     ) {
         avatarView.image = avatar
         nameLabel.text = name
+        postTitleLabel.text = postTitle
         messageLabel.text = message
         postImageView.image = postImage
-        accessibilityLabel = "\(name), \(message)"
+        accessibilityLabel = "\(name), \(postTitle), \(message)"
     }
 
     override var isHighlighted: Bool {
@@ -191,9 +267,17 @@ private final class ZixyNotificationCell: UICollectionViewCell {
         nameLabel.adjustsFontSizeToFitWidth = true
         nameLabel.minimumScaleFactor = 0.85
 
+        postTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        postTitleLabel.font = ZixyFontBook.bold(
+            size: 13,
+            relativeTo: .subheadline
+        )
+        postTitleLabel.textColor = UIColor.black.withAlphaComponent(0.58)
+        postTitleLabel.lineBreakMode = .byTruncatingTail
+
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.font = ZixyFontBook.bold(
-            size: 12,
+            size: 11,
             relativeTo: .subheadline
         )
         messageLabel.textColor = UIColor.systemGray3
@@ -204,7 +288,7 @@ private final class ZixyNotificationCell: UICollectionViewCell {
         postImageView.clipsToBounds = true
         postImageView.layer.cornerRadius = 3
 
-        [avatarView, nameLabel, messageLabel, postImageView].forEach(
+        [avatarView, nameLabel, postTitleLabel, messageLabel, postImageView].forEach(
             contentView.addSubview
         )
         NSLayoutConstraint.activate([
@@ -232,21 +316,32 @@ private final class ZixyNotificationCell: UICollectionViewCell {
             ),
             nameLabel.topAnchor.constraint(
                 equalTo: contentView.topAnchor,
-                constant: 17
+                constant: 12
             ),
             nameLabel.trailingAnchor.constraint(
                 lessThanOrEqualTo: postImageView.leadingAnchor,
                 constant: -10
             ),
 
-            messageLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            messageLabel.topAnchor.constraint(
+            postTitleLabel.leadingAnchor.constraint(
+                equalTo: nameLabel.leadingAnchor
+            ),
+            postTitleLabel.topAnchor.constraint(
                 equalTo: nameLabel.bottomAnchor,
                 constant: 1
             ),
-            messageLabel.trailingAnchor.constraint(
+            postTitleLabel.trailingAnchor.constraint(
                 equalTo: postImageView.leadingAnchor,
                 constant: -10
+            ),
+
+            messageLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            messageLabel.topAnchor.constraint(
+                equalTo: postTitleLabel.bottomAnchor,
+                constant: 2
+            ),
+            messageLabel.trailingAnchor.constraint(
+                equalTo: postTitleLabel.trailingAnchor
             )
         ])
     }

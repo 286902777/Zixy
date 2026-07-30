@@ -40,6 +40,19 @@ enum ZixySessionStore {
         )
     }
 
+    @MainActor
+    static func homeRooms(category: String) -> [ZixyRoomRecord] {
+        ZixyDataStore.shared.rooms(category: category)
+    }
+
+    @MainActor
+    static func roomMessages(roomID: String) -> [ZixyRoomMessageRecord] {
+        ZixyDataStore.shared.roomMessages(
+            roomID: roomID,
+            accountEmail: currentUserIdentifier
+        )
+    }
+
     static func markAuthenticated() {
         UserDefaults.standard.set(true, forKey: authenticatedDefaultsKey)
         UserDefaults.standard.set(false, forKey: guestDefaultsKey)

@@ -28,35 +28,19 @@ final class ZixyConversationController: UIViewController {
     private let participantName: String
     private let participantImage: UIImage?
     private let isCurrentUser: Bool
-    private var messages = [
-        Message(
-            kind: .timestamp,
-            text: "PM 01:20",
-            image: nil,
-            isOutgoing: false
-        ),
-        Message(
-            kind: .text,
-            text: "Hello! Is there anything I can do to assist you?",
-            image: nil,
-            isOutgoing: false
-        ),
-        Message(
-            kind: .text,
-            text: "How should one dress for a trip?",
-            image: nil,
-            isOutgoing: true
-        ),
-        Message(
-            kind: .image,
-            text: nil,
-            image: ZixyImageLibrary.callBackground,
-            isOutgoing: false
-        )
-    ]
+    private let participantEmail: String?
+    private var messages: [Message] = []
 
     private var inputBottomConstraint: NSLayoutConstraint?
     private var keyboardObservers: [NSObjectProtocol] = []
+
+    private var currentUserAvatar: UIImage? {
+        guard let user = ZixyDataStore.shared.currentUser() else {
+            return ZixyImageLibrary.homeRoomPortrait
+        }
+        return ZixyUserAvatarStore.image(for: user)
+            ?? ZixyImageLibrary.homeRoomPortrait
+    }
 
     private let backgroundView = ZixyImageLibrary.makePageBackgroundView()
     private let contentPanel: UIView = {
@@ -170,7 +154,7 @@ final class ZixyConversationController: UIViewController {
         field.placeholder = "Enter..."
         field.font = ZixyFontBook.bold(size: 14, relativeTo: .body)
         field.textColor = UIColor.black.withAlphaComponent(0.8)
-        field.returnKeyType = .done
+        field.returnKeyType = .send
         return field
     }()
     private let sendButton: UIButton = {
@@ -184,11 +168,14 @@ final class ZixyConversationController: UIViewController {
     init(
         participantName: String,
         participantImage: UIImage?,
-        isCurrentUser: Bool
+        isCurrentUser: Bool,
+        participantEmail: String? = nil
     ) {
         self.participantName = participantName
         self.participantImage = participantImage
         self.isCurrentUser = isCurrentUser
+        self.participantEmail = participantEmail
+            ?? ZixyDataStore.shared.user(username: participantName)?.email
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -198,6 +185,7 @@ final class ZixyConversationController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        loadPersistedMessages()
         configureLayout()
         configureInteractions()
         observeKeyboard()
@@ -208,6 +196,12 @@ final class ZixyConversationController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: false)
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
         navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        collectionView.layoutIfNeeded()
+        scrollToLatestMessage(animated: false)
     }
 
     deinit {
@@ -379,7 +373,7 @@ final class ZixyConversationController: UIViewController {
             for: .touchUpInside
         )
         messageField.delegate = self
-        avatarView.isUserInteractionEnabled = !isCurrentUser
+        avatarView.isUserInteractionEnabled = true
         avatarView.accessibilityTraits = .button
         avatarView.addGestureRecognizer(
             UITapGestureRecognizer(
@@ -470,6 +464,41 @@ final class ZixyConversationController: UIViewController {
         )
     }
 
+    private func loadPersistedMessages() {
+        guard let participantEmail else {
+            return
+        }
+        let currentEmail = ZixySessionStore.currentUserIdentifier
+        let records = ZixyDataStore.shared.messages(
+            between: currentEmail,
+            and: participantEmail
+        )
+        guard !records.isEmpty else {
+            return
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        messages = [
+            Message(
+                kind: .timestamp,
+                text: formatter.string(from: records[0].createdAt),
+                image: nil,
+                isOutgoing: false
+            )
+        ]
+        messages.append(
+            contentsOf: records.map {
+                Message(
+                    kind: .text,
+                    text: $0.body,
+                    image: nil,
+                    isOutgoing: $0.senderEmail == currentEmail
+                )
+            }
+        )
+    }
+
     @objc private func navigateBack() {
         navigationController?.popViewController(animated: true)
     }
@@ -487,6 +516,29 @@ final class ZixyConversationController: UIViewController {
         }
 
         let controller = ZixyMoreActionsController(targetName: participantName)
+        controller.onFollowed = { [weak self] in
+            guard let self else {
+                return
+            }
+            guard
+                ZixySessionStore.allowsSocialInteraction,
+                !self.isCurrentUser,
+                let participantEmail = self.participantEmail
+            else {
+                self.showToast("Unable to follow \(self.participantName).")
+                return
+            }
+            do {
+                try ZixyDataStore.shared.setFollowing(
+                    true,
+                    followedEmail: participantEmail,
+                    followerEmail: ZixySessionStore.currentUserIdentifier
+                )
+                self.showToast("Followed \(self.participantName).")
+            } catch {
+                self.showToast("Unable to follow \(self.participantName).")
+            }
+        }
         controller.onReport = { [weak self] in
             guard let self, !self.isCurrentUser else {
                 return
@@ -502,20 +554,40 @@ final class ZixyConversationController: UIViewController {
             )
         }
         controller.onBlock = { [weak self] in
-            guard let self, !self.isCurrentUser else {
+            guard
+                let self,
+                ZixySessionStore.allowsSocialInteraction,
+                !self.isCurrentUser
+            else {
                 return
             }
-            self.showToast("\(self.participantName) has been blocked.")
+            do {
+                if let participantEmail = self.participantEmail {
+                    try ZixyDataStore.shared.setBlocked(
+                        true,
+                        blockedEmail: participantEmail,
+                        blockerEmail: ZixySessionStore.currentUserIdentifier
+                    )
+                } else {
+                    try ZixyDataStore.shared.setBlocked(
+                        true,
+                        blockedUsername: self.participantName,
+                        blockerEmail: ZixySessionStore.currentUserIdentifier
+                    )
+                }
+                self.showToast("\(self.participantName) has been blocked.")
+            } catch {
+                self.showToast("Unable to update the blacklist.")
+            }
         }
         present(controller, animated: false)
     }
 
     @objc private func openParticipantProfile() {
-        pushZixyOtherProfile(
-            name: participantName,
-            image: participantImage,
-            isCurrentUser: isCurrentUser
-        )
+        guard let participantEmail else {
+            return
+        }
+        pushZixyOtherProfile(userEmail: participantEmail)
     }
 
     @objc private func selectPhoto() {
@@ -530,7 +602,11 @@ final class ZixyConversationController: UIViewController {
 
     @objc private func startVideoCall() {
         view.endEditing(true)
-        let controller = ZixyVideoCallController(participantName: participantName)
+        let controller = ZixyVideoCallController(
+            participantName: participantName,
+            participantEmail: participantEmail,
+            participantImage: participantImage
+        )
         controller.hidesBottomBarWhenPushed = true
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -541,6 +617,18 @@ final class ZixyConversationController: UIViewController {
         guard !text.isEmpty else {
             showToast("Enter a message first.")
             return
+        }
+        if let participantEmail {
+            do {
+                try ZixyDataStore.shared.addMessage(
+                    body: text,
+                    senderEmail: ZixySessionStore.currentUserIdentifier,
+                    recipientEmail: participantEmail
+                )
+            } catch {
+                showToast("Unable to send the message.")
+                return
+            }
         }
         messages.append(
             Message(kind: .text, text: text, image: nil, isOutgoing: true)
@@ -583,15 +671,13 @@ extension ZixyConversationController:
             cell?.configure(
                 text: message.text ?? "",
                 avatar: message.isOutgoing
-                    ? ZixyImageLibrary.homeRoomPortrait
+                    ? currentUserAvatar
                     : participantImage,
                 isOutgoing: message.isOutgoing
             )
-            cell?.onAvatarTapped = message.isOutgoing
-                ? nil
-                : { [weak self] in
-                    self?.openParticipantProfile()
-                }
+            cell?.onAvatarTapped = { [weak self] in
+                self?.openProfileForMessage(isOutgoing: message.isOutgoing)
+            }
             return cell ?? UICollectionViewCell()
         case .image:
             let cell = collectionView.dequeueReusableCell(
@@ -601,17 +687,22 @@ extension ZixyConversationController:
             cell?.configure(
                 image: message.image,
                 avatar: message.isOutgoing
-                    ? ZixyImageLibrary.homeRoomPortrait
+                    ? currentUserAvatar
                     : participantImage,
                 isOutgoing: message.isOutgoing
             )
-            cell?.onAvatarTapped = message.isOutgoing
-                ? nil
-                : { [weak self] in
-                    self?.openParticipantProfile()
-                }
+            cell?.onAvatarTapped = { [weak self] in
+                self?.openProfileForMessage(isOutgoing: message.isOutgoing)
+            }
             return cell ?? UICollectionViewCell()
         }
+    }
+
+    private func openProfileForMessage(isOutgoing: Bool) {
+        guard !isOutgoing else {
+            return
+        }
+        openParticipantProfile()
     }
 
     func collectionView(
@@ -650,6 +741,7 @@ extension ZixyConversationController: UITextFieldDelegate {
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
+        sendMessage()
         return true
     }
 }
