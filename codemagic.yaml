@@ -1,10 +1,10 @@
 workflows:
   ios-native-quick-start:
-    name: Zixy
+    name: zixy
     max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Zixy
+      app_store_connect: zixy
     environment:
       ios_signing:
         distribution_type: app_store
