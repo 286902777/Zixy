@@ -189,6 +189,8 @@ final class ZixyDataStore {
     static let shared = ZixyDataStore()
     private static let defaultRoomMessageAccount =
         "zixy_room_default_messages"
+    private static let legacyElenaEmail = "elena@gmail.com"
+    private static let elenaEmail = "ena_test@gmail.com"
 
     private enum Entity {
         static let user = "ZixyUser"
@@ -231,6 +233,7 @@ final class ZixyDataStore {
             throw ZixyDataStoreError.unavailable
         }
         isPrepared = true
+        try migrateElenaEmailIfNeeded()
         try seedIfNeeded()
     }
 
@@ -317,7 +320,7 @@ final class ZixyDataStore {
         let blockedEmails = currentUserBlockedEmails()
         let seedOrder = Dictionary(
             uniqueKeysWithValues: Self.seedRows.enumerated().map { index, row in
-                ("\(row.username.lowercased())@gmail.com", index)
+                (Self.seedEmail(for: row), index)
             }
         )
         return postObjects.compactMap(makePostRecord)
@@ -1154,6 +1157,165 @@ final class ZixyDataStore {
         return try? container.viewContext.fetch(request).first
     }
 
+    private func migrateElenaEmailIfNeeded() throws {
+        let oldEmail = Self.legacyElenaEmail
+        let newEmail = Self.elenaEmail
+        guard let elena = fetchUser(email: oldEmail) else {
+            return
+        }
+        guard fetchUser(email: newEmail) == nil else {
+            throw ZixyDataStoreError.duplicateEmail
+        }
+
+        let legacyBalance = ZixyCoinBalanceStore.balance(for: oldEmail)
+        var didMigrateBalance = false
+        if legacyBalance > 0 {
+            do {
+                try ZixyCoinBalanceStore.setBalance(
+                    legacyBalance,
+                    for: newEmail
+                )
+                try ZixyCoinBalanceStore.deleteBalance(for: oldEmail)
+                didMigrateBalance = true
+            } catch {
+                try? ZixyCoinBalanceStore.deleteBalance(for: newEmail)
+                throw error
+            }
+        }
+
+        do {
+            elena.setValue(newEmail, forKey: "email")
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.post,
+                keys: ["authorEmail"]
+            )
+            try migratePostEmailCollections(
+                from: oldEmail,
+                to: newEmail
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.follow,
+                keys: ["followerEmail", "followedEmail"]
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.message,
+                keys: ["senderEmail", "recipientEmail"]
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.room,
+                keys: ["ownerEmail"]
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.roomMember,
+                keys: ["userEmail"]
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.roomMessage,
+                keys: ["accountEmail", "senderEmail"]
+            )
+            try replaceEmail(
+                oldEmail,
+                with: newEmail,
+                in: Entity.blacklist,
+                keys: ["blockerEmail", "blockedEmail"]
+            )
+            try container.viewContext.save()
+        } catch {
+            container.viewContext.rollback()
+            if didMigrateBalance {
+                try? ZixyCoinBalanceStore.setBalance(
+                    legacyBalance,
+                    for: oldEmail
+                )
+                try? ZixyCoinBalanceStore.deleteBalance(for: newEmail)
+            }
+            throw error
+        }
+
+        ZixySessionStore.migrateUserIdentifier(
+            from: oldEmail,
+            to: newEmail
+        )
+    }
+
+    private func replaceEmail(
+        _ oldEmail: String,
+        with newEmail: String,
+        in entityName: String,
+        keys: [String]
+    ) throws {
+        for key in keys {
+            let request = NSFetchRequest<NSManagedObject>(
+                entityName: entityName
+            )
+            request.predicate = NSPredicate(format: "%K == %@", key, oldEmail)
+            for object in try container.viewContext.fetch(request) {
+                object.setValue(newEmail, forKey: key)
+            }
+        }
+    }
+
+    private func migratePostEmailCollections(
+        from oldEmail: String,
+        to newEmail: String
+    ) throws {
+        let request = NSFetchRequest<NSManagedObject>(entityName: Entity.post)
+        for post in try container.viewContext.fetch(request) {
+            let likedBy = post.string("likedBy")
+                .split(separator: "|")
+                .map(String.init)
+            if likedBy.contains(oldEmail) {
+                post.setValue(
+                    likedBy.map { $0 == oldEmail ? newEmail : $0 }
+                        .joined(separator: "|"),
+                    forKey: "likedBy"
+                )
+            }
+
+            let encodedComments = post.string("comment")
+            guard
+                let data = encodedComments.data(using: .utf8),
+                let comments = try? JSONDecoder().decode(
+                    [ZixyStoredPostComment].self,
+                    from: data
+                ),
+                comments.contains(where: { $0.authorEmail == oldEmail })
+            else {
+                continue
+            }
+            let migratedComments = comments.map {
+                ZixyStoredPostComment(
+                    id: $0.id,
+                    authorEmail: $0.authorEmail == oldEmail
+                        ? newEmail
+                        : $0.authorEmail,
+                    body: $0.body,
+                    createdAt: $0.createdAt
+                )
+            }
+            let migratedData = try JSONEncoder().encode(migratedComments)
+            guard let migratedValue = String(
+                data: migratedData,
+                encoding: .utf8
+            ) else {
+                throw ZixyDataStoreError.unavailable
+            }
+            post.setValue(migratedValue, forKey: "comment")
+        }
+    }
+
     private func seedIfNeeded() throws {
         let request = NSFetchRequest<NSManagedObject>(entityName: Entity.user)
         if try container.viewContext.count(for: request) == 0 {
@@ -1164,7 +1326,7 @@ final class ZixyDataStore {
                     forEntityName: Entity.user,
                     into: container.viewContext
                 )
-                let email = "\(row.username.lowercased())@gmail.com"
+                let email = Self.seedEmail(for: row)
                 user.setValue(UUID().uuidString, forKey: "id")
                 user.setValue(row.username, forKey: "username")
                 user.setValue(email, forKey: "email")
@@ -1210,7 +1372,7 @@ final class ZixyDataStore {
                 .prefix(2)
             let selectedUsers = [elena] + randomUsers
             let selectedEmails = selectedUsers.map {
-                "\($0.username.lowercased())@gmail.com"
+                Self.seedEmail(for: $0)
             }
 
             for follower in selectedEmails {
@@ -1234,7 +1396,7 @@ final class ZixyDataStore {
         for post in posts {
             let isSeedPost = Self.seedRows.contains(where: {
                     post.string("authorEmail")
-                        == "\($0.username.lowercased())@gmail.com"
+                        == Self.seedEmail(for: $0)
                         && post.string("title") == $0.title
                 })
             if isSeedPost,
@@ -2081,6 +2243,12 @@ final class ZixyDataStore {
             comment: ""
         )
     ]
+
+    private static func seedEmail(for row: SeedRow) -> String {
+        row.username.caseInsensitiveCompare("Elena") == .orderedSame
+            ? elenaEmail
+            : "\(row.username.lowercased())@gmail.com"
+    }
 
     private static func normalizeEmail(_ email: String) -> String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

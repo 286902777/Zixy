@@ -297,12 +297,17 @@ final class ZixySignInController: ZixyAuthCanvasController {
             return
         }
         view.endEditing(true)
+        let email = sanitizedCredential(emailField.textField.text)
+        let password = sanitizedCredential(passwordField.textField.text)
+        let confirmation = sanitizedCredential(
+            confirmationField.textField.text
+        )
+        emailField.textField.text = email
+        passwordField.textField.text = password
+        confirmationField.textField.text = confirmation
+
         guard
-            let email = emailField.textField.text?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ),
             !email.isEmpty,
-            let password = passwordField.textField.text,
             password.count >= 6
         else {
             showToast("Enter a valid email and a password with at least 6 characters.")
@@ -310,7 +315,7 @@ final class ZixySignInController: ZixyAuthCanvasController {
         }
 
         if mode == .signUp {
-            guard confirmationField.textField.text == password else {
+            guard confirmation == password else {
                 showToast("Passwords do not match.")
                 return
             }
@@ -345,6 +350,10 @@ final class ZixySignInController: ZixyAuthCanvasController {
                 self.showToast("Incorrect email or password.")
             }
         }
+    }
+
+    private func sanitizedCredential(_ text: String?) -> String {
+        (text ?? "").filter { !$0.isWhitespace }
     }
 
     @objc private func goBack() {
