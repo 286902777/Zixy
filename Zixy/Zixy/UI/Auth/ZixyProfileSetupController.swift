@@ -47,7 +47,7 @@ final class ZixyProfileSetupController: ZixyAuthCanvasController,
     private let locationPicker = UIPickerView()
     private let countryCodes = Locale.isoRegionCodes.sorted()
     private let releaseButton = ZixyGradientActionButton(
-        title: "Release",
+        title: "Save",
         height: 74,
         titleSize: 22
     )

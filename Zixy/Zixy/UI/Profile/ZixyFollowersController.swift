@@ -101,8 +101,15 @@ final class ZixyFollowersController: ZixyScreenController,
             name: follower.name,
             isFollowed: follower.isFollowed
         )
-        cell.onFollow = { [weak self] in
-            self?.removeFollowing(at: indexPath)
+        cell.onFollow = { [weak self, weak cell] in
+            guard
+                let self,
+                let cell,
+                let currentIndexPath = collectionView.indexPath(for: cell)
+            else {
+                return
+            }
+            self.toggleFollowing(at: currentIndexPath)
         }
         cell.onAvatarTapped = { [weak self] in
             self?.pushZixyOtherProfile(userEmail: follower.email)
@@ -118,14 +125,19 @@ final class ZixyFollowersController: ZixyScreenController,
         CGSize(width: collectionView.bounds.width, height: 74)
     }
 
-    private func removeFollowing(at indexPath: IndexPath) {
+    private func toggleFollowing(at indexPath: IndexPath) {
         guard followers.indices.contains(indexPath.item) else {
             return
         }
+        guard ZixySessionStore.allowsSocialInteraction else {
+            showToast("Sign in to update the follow status.")
+            return
+        }
         let follower = followers[indexPath.item]
+        let shouldFollow = !follower.isFollowed
         do {
             try ZixyDataStore.shared.setFollowing(
-                false,
+                shouldFollow,
                 followedEmail: follower.email,
                 followerEmail: ZixySessionStore.currentUserIdentifier
             )
@@ -133,9 +145,13 @@ final class ZixyFollowersController: ZixyScreenController,
             showToast("Unable to update the follow status.")
             return
         }
-        followers[indexPath.item].isFollowed = false
+        followers[indexPath.item].isFollowed = shouldFollow
         collectionView.reloadItems(at: [indexPath])
-        showToast("Unfollowed \(follower.name).")
+        showToast(
+            shouldFollow
+                ? "Following \(follower.name)."
+                : "Unfollowed \(follower.name)."
+        )
     }
 }
 
@@ -169,7 +185,10 @@ private final class ZixyFollowerCell: UICollectionViewCell {
         avatarView.image = image
         nameLabel.text = name
         followButton.setImage(
-            ZixyImageLibrary.profileRemove?.withRenderingMode(.alwaysOriginal),
+            (isFollowed
+                ? ZixyImageLibrary.profileRemove
+                : ZixyImageLibrary.followersAdd)?
+                .withRenderingMode(.alwaysOriginal),
             for: .normal
         )
         followButton.backgroundColor = .clear

@@ -110,8 +110,8 @@ final class ZixyFollowingController: ZixyScreenController,
         cell.configure(
             image: item.image,
             name: item.name,
-            actionLabel: "Follow",
-            actionImage: ZixyImageLibrary.followersAdd
+            actionLabel: "Unfollow",
+            actionImage: ZixyImageLibrary.profileRemove
         )
         cell.onRemove = { [weak self, weak cell] in
             guard
@@ -121,7 +121,7 @@ final class ZixyFollowingController: ZixyScreenController,
             else {
                 return
             }
-            addFollowing(at: currentIndexPath)
+            removeFollowing(at: currentIndexPath)
         }
         cell.onAvatarTapped = { [weak self] in
             self?.pushZixyOtherProfile(userEmail: item.email)
@@ -137,17 +137,21 @@ final class ZixyFollowingController: ZixyScreenController,
         CGSize(width: collectionView.bounds.width, height: 74)
     }
 
-    private func addFollowing(at indexPath: IndexPath) {
+    private func removeFollowing(at indexPath: IndexPath) {
         guard
             items.indices.contains(indexPath.item),
             !items[indexPath.item].isCurrentUser
         else {
             return
         }
+        guard ZixySessionStore.allowsSocialInteraction else {
+            showToast("Sign in to update the follow status.")
+            return
+        }
         let item = items[indexPath.item]
         do {
             try ZixyDataStore.shared.setFollowing(
-                true,
+                false,
                 followedEmail: item.email,
                 followerEmail: ZixySessionStore.currentUserIdentifier
             )
@@ -155,7 +159,10 @@ final class ZixyFollowingController: ZixyScreenController,
             showToast("Unable to update the follow status.")
             return
         }
-        showToast("Following \(item.name).")
+        items.remove(at: indexPath.item)
+        collectionView.deleteItems(at: [indexPath])
+        updateEmptyState()
+        showToast("Unfollowed \(item.name).")
     }
 
     private func updateEmptyState() {

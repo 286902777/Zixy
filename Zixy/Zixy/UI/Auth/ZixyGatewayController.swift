@@ -48,7 +48,7 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
         subtitleLabel.textAlignment = .center
 
         let loginButton = AuthEntryActionButton(
-            title: "Login by email",
+            title: "Sign in by email",
             titleCenterOffset: 8,
             reversesGradient: false
         )
@@ -217,7 +217,7 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
     }
 
     private func makeTermsTitle() -> NSAttributedString {
-        let text = "By continuing you agree to our Terms of Service and\nPrivacy Policy"
+        let text = "By continuing you agree to our User Agreement and\nPrivacy Policy"
         let title = NSMutableAttributedString(
             string: text,
             attributes: [
@@ -230,16 +230,16 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
                 )
             ]
         )
-        let agreementRange = (text as NSString).range(of: "Terms of Service")
+        let agreementRange = (text as NSString).range(of: "User Agreement")
         title.addAttribute(
             .link,
-            value: "zixy://user-agreement",
+            value: ZixyWebController.H5Page.userAgreement.urlString,
             range: agreementRange
         )
         let privacyRange = (text as NSString).range(of: "Privacy Policy")
         title.addAttribute(
             .link,
-            value: "zixy://privacy-policy",
+            value: ZixyWebController.H5Page.privacyPolicy.urlString,
             range: privacyRange
         )
         return title
@@ -252,10 +252,10 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
         interaction: UITextItemInteraction
     ) -> Bool {
         let page: ZixyWebController.H5Page
-        switch URL.host {
-        case "user-agreement":
+        switch URL.absoluteString {
+        case ZixyWebController.H5Page.userAgreement.urlString:
             page = .userAgreement
-        case "privacy-policy":
+        case ZixyWebController.H5Page.privacyPolicy.urlString:
             page = .privacyPolicy
         default:
             return false

@@ -21,6 +21,16 @@ final class ZixyRoomDetailController: ZixyScreenController {
         let price: Int
     }
 
+    private struct GiftRecipient {
+        let email: String
+        let name: String
+        let image: UIImage?
+
+        var identifier: String {
+            email.lowercased()
+        }
+    }
+
     private struct Message {
         enum Content {
             case text(String)
@@ -51,6 +61,8 @@ final class ZixyRoomDetailController: ZixyScreenController {
     private var isLongPressHeld = false
 
     private var seats: [Seat]
+    private var giftRecipients: [GiftRecipient]
+    private var selectedGiftRecipientIdentifier: String?
     private var profileObserver: NSObjectProtocol?
 
     private let gifts: [Gift] = [
@@ -256,6 +268,30 @@ final class ZixyRoomDetailController: ZixyScreenController {
         return collectionView
     }()
 
+    private lazy var giftRecipientCollectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.minimumInteritemSpacing = 8
+        layout.minimumLineSpacing = 8
+        layout.sectionInset = .zero
+
+        let collectionView = UICollectionView(
+            frame: .zero,
+            collectionViewLayout: layout
+        )
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.backgroundColor = .clear
+        collectionView.alwaysBounceHorizontal = true
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.register(
+            ZixyGiftRecipientCell.self,
+            forCellWithReuseIdentifier: ZixyGiftRecipientCell.reuseIdentifier
+        )
+        return collectionView
+    }()
+
     private let balanceImageView: UIImageView = {
         let imageView = UIImageView(image: ZixyImageLibrary.roomCoinStack)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -304,6 +340,12 @@ final class ZixyRoomDetailController: ZixyScreenController {
         self.mode = mode
         self.hostIsCurrentUser = hostIsCurrentUser
         self.seats = Self.makeSeats(members: members)
+        self.giftRecipients = Self.makeGiftRecipients(
+            members: members,
+            hostName: hostName,
+            hostEmail: hostEmail,
+            hostImage: hostImage
+        )
         super.init(nibName: nil, bundle: nil)
         if let hostImage {
             hostImageView.image = hostImage
@@ -391,6 +433,50 @@ final class ZixyRoomDetailController: ZixyScreenController {
             )
         }
         return Array(seats.prefix(8))
+    }
+
+    private static func makeGiftRecipients(
+        members: [ZixyUserRecord],
+        hostName: String,
+        hostEmail: String?,
+        hostImage: UIImage?
+    ) -> [GiftRecipient] {
+        let currentUserEmail = ZixySessionStore.currentUserIdentifier
+            .lowercased()
+        var seenEmails = Set<String>()
+        var recipients: [GiftRecipient] = []
+
+        if let hostEmail {
+            let normalizedHostEmail = hostEmail.lowercased()
+            if normalizedHostEmail != currentUserEmail {
+                seenEmails.insert(normalizedHostEmail)
+                recipients.append(
+                    GiftRecipient(
+                        email: hostEmail,
+                        name: hostName,
+                        image: hostImage
+                    )
+                )
+            }
+        }
+
+        for member in members {
+            let normalizedEmail = member.email.lowercased()
+            guard
+                normalizedEmail != currentUserEmail,
+                seenEmails.insert(normalizedEmail).inserted
+            else {
+                continue
+            }
+            recipients.append(
+                GiftRecipient(
+                    email: member.email,
+                    name: member.username,
+                    image: ZixyUserAvatarStore.image(for: member)
+                )
+            )
+        }
+        return recipients
     }
 
     override func viewDidLoad() {
@@ -486,6 +572,22 @@ final class ZixyRoomDetailController: ZixyScreenController {
             if didUpdateSeat {
                 seatCollectionView.reloadData()
             }
+
+            var didUpdateGiftRecipient = false
+            giftRecipients = giftRecipients.map { recipient in
+                guard recipient.email.lowercased() == user.email.lowercased() else {
+                    return recipient
+                }
+                didUpdateGiftRecipient = true
+                return GiftRecipient(
+                    email: user.email,
+                    name: user.username,
+                    image: ZixyUserAvatarStore.image(for: user)
+                )
+            }
+            if didUpdateGiftRecipient {
+                giftRecipientCollectionView.reloadData()
+            }
             if user.email.lowercased()
                 == ZixySessionStore.currentUserIdentifier.lowercased() {
                 messageTableView.reloadData()
@@ -508,6 +610,7 @@ final class ZixyRoomDetailController: ZixyScreenController {
         contentView.addSubview(storePanel)
         storePanel.addSubview(storeEyebrowLabel)
         storePanel.addSubview(storeTitleLabel)
+        storePanel.addSubview(giftRecipientCollectionView)
         storePanel.addSubview(giftCollectionView)
         storePanel.addSubview(balanceImageView)
         storePanel.addSubview(balanceLabel)
@@ -647,9 +750,24 @@ final class ZixyRoomDetailController: ZixyScreenController {
                 constant: 8
             ),
 
-            giftCollectionView.topAnchor.constraint(
+            giftRecipientCollectionView.topAnchor.constraint(
                 equalTo: storeTitleLabel.bottomAnchor,
-                constant: 6
+                constant: 8
+            ),
+            giftRecipientCollectionView.leadingAnchor.constraint(
+                equalTo: storePanel.leadingAnchor,
+                constant: 26
+            ),
+            giftRecipientCollectionView.trailingAnchor.constraint(
+                equalTo: storePanel.trailingAnchor
+            ),
+            giftRecipientCollectionView.heightAnchor.constraint(
+                equalToConstant: 30
+            ),
+
+            giftCollectionView.topAnchor.constraint(
+                equalTo: giftRecipientCollectionView.bottomAnchor,
+                constant: 10
             ),
             giftCollectionView.leadingAnchor.constraint(
                 equalTo: storePanel.leadingAnchor,
@@ -839,14 +957,33 @@ final class ZixyRoomDetailController: ZixyScreenController {
     @objc private func openGiftStore() {
         view.endEditing(true)
         cancelVoiceRecording()
+        reloadGiftRecipients()
         updateBalance()
         mode = .store
         updateMode(animated: true)
     }
 
     @objc private func closeGiftStore() {
+        selectedGiftRecipientIdentifier = nil
+        giftRecipientCollectionView.reloadData()
         mode = .conversation
         updateMode(animated: true)
+    }
+
+    private func reloadGiftRecipients() {
+        if let room = ZixyDataStore.shared.room(
+            id: roomID,
+            visibleTo: ZixySessionStore.currentUserIdentifier
+        ) {
+            giftRecipients = Self.makeGiftRecipients(
+                members: room.members,
+                hostName: room.owner.username,
+                hostEmail: room.owner.email,
+                hostImage: ZixyUserAvatarStore.image(for: room.owner)
+            )
+        }
+        selectedGiftRecipientIdentifier = nil
+        giftRecipientCollectionView.reloadData()
     }
 
     private func loadMessages() {
@@ -1229,7 +1366,16 @@ final class ZixyRoomDetailController: ZixyScreenController {
         else {
             return
         }
-        let controller = ZixyMoreActionsController(targetName: hostName)
+        let isFollowing = hostEmail.map {
+            ZixyDataStore.shared.isFollowing(
+                $0,
+                from: ZixySessionStore.currentUserIdentifier
+            )
+        } ?? false
+        let controller = ZixyMoreActionsController(
+            targetName: hostName,
+            isFollowing: isFollowing
+        )
         controller.onFollowed = { [weak self] in
             guard let self else {
                 return
@@ -1315,7 +1461,28 @@ final class ZixyRoomDetailController: ZixyScreenController {
         )
     }
 
-    private func sendGift(_ gift: Gift) {
+    private func sendGift(
+        _ gift: Gift,
+        to recipient: GiftRecipient
+    ) {
+        guard ZixySessionStore.allowsSocialInteraction else {
+            showToast("Sign in to send gifts.")
+            return
+        }
+        let alert = ZixyAlertController(
+            kind: .sendGift(
+                giftName: gift.name,
+                recipientName: recipient.name,
+                coinAmount: gift.price
+            )
+        )
+        alert.onPrimaryAction = { [weak self] in
+            self?.performGiftSending(gift)
+        }
+        present(alert, animated: true)
+    }
+
+    private func performGiftSending(_ gift: Gift) {
         guard ZixySessionStore.allowsSocialInteraction else {
             showToast("Sign in to send gifts.")
             return
@@ -1413,7 +1580,13 @@ extension ZixyRoomDetailController:
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        collectionView === seatCollectionView ? seats.count : gifts.count
+        if collectionView === seatCollectionView {
+            return seats.count
+        }
+        if collectionView === giftRecipientCollectionView {
+            return giftRecipients.count
+        }
+        return gifts.count
     }
 
     func collectionView(
@@ -1435,6 +1608,23 @@ extension ZixyRoomDetailController:
             return cell
         }
 
+        if collectionView === giftRecipientCollectionView {
+            guard let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: ZixyGiftRecipientCell.reuseIdentifier,
+                for: indexPath
+            ) as? ZixyGiftRecipientCell else {
+                return UICollectionViewCell()
+            }
+            let recipient = giftRecipients[indexPath.item]
+            cell.configure(
+                name: recipient.name,
+                image: recipient.image,
+                isSelected:
+                    recipient.identifier == selectedGiftRecipientIdentifier
+            )
+            return cell
+        }
+
         guard let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: ZixyRoomGiftCell.reuseIdentifier,
             for: indexPath
@@ -1451,6 +1641,21 @@ extension ZixyRoomDetailController:
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
+        if collectionView === giftRecipientCollectionView {
+            let recipient = giftRecipients[indexPath.item]
+            let textWidth = (recipient.name as NSString).size(
+                withAttributes: [
+                    .font: ZixyFontBook.bold(
+                        size: 11,
+                        relativeTo: .caption2
+                    )
+                ]
+            ).width
+            return CGSize(
+                width: min(170, max(108, ceil(textWidth) + 45)),
+                height: 30
+            )
+        }
         let spacing: CGFloat = collectionView === seatCollectionView ? 8 : 4
         let width = floor((collectionView.bounds.width - spacing * 3) / 4)
         return CGSize(
@@ -1472,10 +1677,28 @@ extension ZixyRoomDetailController:
             return
         }
 
+        if collectionView === giftRecipientCollectionView {
+            guard giftRecipients.indices.contains(indexPath.item) else {
+                return
+            }
+            selectedGiftRecipientIdentifier =
+                giftRecipients[indexPath.item].identifier
+            giftRecipientCollectionView.reloadData()
+            return
+        }
+
         guard gifts.indices.contains(indexPath.item) else {
             return
         }
-        sendGift(gifts[indexPath.item])
+        guard
+            let recipient = giftRecipients.first(where: {
+                $0.identifier == selectedGiftRecipientIdentifier
+            })
+        else {
+            showToast("Select a recipient first.")
+            return
+        }
+        sendGift(gifts[indexPath.item], to: recipient)
     }
 
     private func openProfile(for seat: Seat) {
@@ -1650,12 +1873,103 @@ private final class ZixyRoomSeatCell: UICollectionViewCell {
     }
 }
 
+private final class ZixyGiftRecipientCell: UICollectionViewCell {
+
+    static let reuseIdentifier = "ZixyGiftRecipientCell"
+
+    private let avatarView = UIImageView()
+    private let nameLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configureLayout()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(
+        name: String,
+        image: UIImage?,
+        isSelected: Bool
+    ) {
+        avatarView.image = image ?? ZixyImageLibrary.userAvatar
+        nameLabel.text = name
+        contentView.backgroundColor = isSelected
+            ? UIColor(
+                red: 65 / 255,
+                green: 116 / 255,
+                blue: 1,
+                alpha: 1
+            )
+            : UIColor(
+                red: 80 / 255,
+                green: 77 / 255,
+                blue: 151 / 255,
+                alpha: 1
+            )
+        accessibilityLabel = name
+        accessibilityTraits = isSelected
+            ? [.button, .selected]
+            : .button
+    }
+
+    private func configureLayout() {
+        contentView.layer.cornerRadius = 15
+        contentView.layer.masksToBounds = true
+
+        avatarView.translatesAutoresizingMaskIntoConstraints = false
+        avatarView.contentMode = .scaleAspectFill
+        avatarView.clipsToBounds = true
+        avatarView.layer.cornerRadius = 11
+
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.font = ZixyFontBook.bold(size: 11, relativeTo: .caption2)
+        nameLabel.textColor = .white
+        nameLabel.adjustsFontSizeToFitWidth = true
+        nameLabel.minimumScaleFactor = 0.72
+
+        contentView.addSubview(avatarView)
+        contentView.addSubview(nameLabel)
+        NSLayoutConstraint.activate([
+            avatarView.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor,
+                constant: 5
+            ),
+            avatarView.centerYAnchor.constraint(
+                equalTo: contentView.centerYAnchor
+            ),
+            avatarView.widthAnchor.constraint(equalToConstant: 22),
+            avatarView.heightAnchor.constraint(equalTo: avatarView.widthAnchor),
+
+            nameLabel.leadingAnchor.constraint(
+                equalTo: avatarView.trailingAnchor,
+                constant: 6
+            ),
+            nameLabel.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -10
+            ),
+            nameLabel.centerYAnchor.constraint(
+                equalTo: contentView.centerYAnchor
+            )
+        ])
+    }
+}
+
 private final class ZixyRoomGiftCell: UICollectionViewCell {
 
     static let reuseIdentifier = "ZixyRoomGiftCell"
 
     private let imageView = UIImageView()
     private let nameLabel = UILabel()
+    private let priceBadgeView = UIView()
+    private let priceCoinView = UIImageView(
+        image: UIImage(named: "zixy_room_coin_stack")?.withRenderingMode(
+            .alwaysOriginal
+        )
+    )
     private let priceLabel = UILabel()
 
     override init(frame: CGRect) {
@@ -1670,7 +1984,7 @@ private final class ZixyRoomGiftCell: UICollectionViewCell {
     func configure(name: String, image: UIImage?, price: Int) {
         imageView.image = image
         nameLabel.text = name
-        priceLabel.text = "🪙 \(price)"
+        priceLabel.text = "\(price)"
         accessibilityLabel = "\(name), \(price) coins"
     }
 
@@ -1684,17 +1998,36 @@ private final class ZixyRoomGiftCell: UICollectionViewCell {
         nameLabel.textAlignment = .center
         nameLabel.adjustsFontSizeToFitWidth = true
 
+        priceBadgeView.translatesAutoresizingMaskIntoConstraints = false
+        priceBadgeView.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        priceBadgeView.layer.borderWidth = 1
+        priceBadgeView.layer.borderColor = UIColor(
+            red: 1,
+            green: 0.68,
+            blue: 0.45,
+            alpha: 1
+        ).cgColor
+        priceBadgeView.layer.cornerRadius = 7
+        priceBadgeView.layer.masksToBounds = true
+
+        priceCoinView.translatesAutoresizingMaskIntoConstraints = false
+        priceCoinView.contentMode = .scaleAspectFit
+
         priceLabel.translatesAutoresizingMaskIntoConstraints = false
         priceLabel.font = ZixyFontBook.bold(size: 8, relativeTo: .caption2)
-        priceLabel.textColor = UIColor(red: 1, green: 0.72, blue: 0.53, alpha: 1)
-        priceLabel.backgroundColor = UIColor.black.withAlphaComponent(0.28)
-        priceLabel.layer.cornerRadius = 7
-        priceLabel.clipsToBounds = true
+        priceLabel.textColor = UIColor(
+            red: 1,
+            green: 0.72,
+            blue: 0.53,
+            alpha: 1
+        )
         priceLabel.textAlignment = .center
 
         contentView.addSubview(imageView)
         contentView.addSubview(nameLabel)
-        contentView.addSubview(priceLabel)
+        contentView.addSubview(priceBadgeView)
+        priceBadgeView.addSubview(priceCoinView)
+        priceBadgeView.addSubview(priceLabel)
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             imageView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
@@ -1705,10 +2038,37 @@ private final class ZixyRoomGiftCell: UICollectionViewCell {
             nameLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             nameLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
 
-            priceLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1),
-            priceLabel.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            priceLabel.widthAnchor.constraint(equalToConstant: 42),
-            priceLabel.heightAnchor.constraint(equalToConstant: 14)
+            priceBadgeView.topAnchor.constraint(
+                equalTo: nameLabel.bottomAnchor,
+                constant: 1
+            ),
+            priceBadgeView.centerXAnchor.constraint(
+                equalTo: contentView.centerXAnchor
+            ),
+            priceBadgeView.widthAnchor.constraint(equalToConstant: 44),
+            priceBadgeView.heightAnchor.constraint(equalToConstant: 14),
+
+            priceCoinView.leadingAnchor.constraint(
+                equalTo: priceBadgeView.leadingAnchor,
+                constant: 4
+            ),
+            priceCoinView.centerYAnchor.constraint(
+                equalTo: priceBadgeView.centerYAnchor
+            ),
+            priceCoinView.widthAnchor.constraint(equalToConstant: 10),
+            priceCoinView.heightAnchor.constraint(equalToConstant: 9),
+
+            priceLabel.leadingAnchor.constraint(
+                equalTo: priceCoinView.trailingAnchor,
+                constant: 1
+            ),
+            priceLabel.trailingAnchor.constraint(
+                equalTo: priceBadgeView.trailingAnchor,
+                constant: -4
+            ),
+            priceLabel.centerYAnchor.constraint(
+                equalTo: priceBadgeView.centerYAnchor
+            )
         ])
     }
 }

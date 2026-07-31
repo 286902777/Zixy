@@ -915,7 +915,17 @@ final class ZixyVideoDetailController: ZixyScreenController {
             return
         }
         let targetName = post?.author.username ?? "User"
-        let controller = ZixyMoreActionsController(targetName: targetName)
+        let followedEmail = post?.author.email
+        let isFollowing = followedEmail.map {
+            ZixyDataStore.shared.isFollowing(
+                $0,
+                from: ZixySessionStore.currentUserIdentifier
+            )
+        } ?? false
+        let controller = ZixyMoreActionsController(
+            targetName: targetName,
+            isFollowing: isFollowing
+        )
         controller.onFollowed = { [weak self] in
             guard let self else {
                 return

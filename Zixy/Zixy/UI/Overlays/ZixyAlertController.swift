@@ -2,12 +2,17 @@ import UIKit
 
 final class ZixyAlertController: UIViewController {
 
-    enum Kind {
+    enum Kind: Equatable {
         case blockUser
         case connectToChat
         case loginRequired
         case insufficientCoins
         case deleteAccount
+        case sendGift(
+            giftName: String,
+            recipientName: String,
+            coinAmount: Int
+        )
 
         fileprivate var title: String {
             switch self {
@@ -16,7 +21,9 @@ final class ZixyAlertController: UIViewController {
             case .connectToChat:
                 return "Connect to\nChat"
             case .loginRequired, .insufficientCoins:
-                return "Hint"
+                return "Sign In Required"
+            case .sendGift:
+                return "Send Gift"
             }
         }
 
@@ -36,7 +43,7 @@ final class ZixyAlertController: UIViewController {
             case .loginRequired:
                 return """
                 To ensure the normal operation of
-                the function, please log in to your
+                the function, please sign in to your
                 account first.
                 """
             case .insufficientCoins:
@@ -52,6 +59,14 @@ final class ZixyAlertController: UIViewController {
                 cleared and cannot be recovered.
                 Please choose carefully.
                 """
+            case let .sendGift(
+                giftName,
+                recipientName,
+                coinAmount
+            ):
+                return """
+                Send \(giftName) to \(recipientName) for \(coinAmount) Coins?
+                """
             }
         }
 
@@ -60,11 +75,13 @@ final class ZixyAlertController: UIViewController {
             case .connectToChat:
                 return "OK"
             case .loginRequired:
-                return "Log in"
+                return "Sign in"
             case .insufficientCoins:
                 return "Agree"
             case .blockUser, .deleteAccount:
                 return "Sure"
+            case .sendGift:
+                return "Confirm"
             }
         }
 
@@ -78,7 +95,10 @@ final class ZixyAlertController: UIViewController {
                 return 272
             case .deleteAccount:
                 return 314
-            case .blockUser, .loginRequired, .insufficientCoins:
+            case .blockUser,
+                .loginRequired,
+                .insufficientCoins,
+                .sendGift:
                 return 292
             }
         }

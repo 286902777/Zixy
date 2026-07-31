@@ -23,7 +23,7 @@ final class ZixyWebController: ZixyScreenController,
             }
         }
 
-        fileprivate var urlString: String {
+        var urlString: String {
             switch self {
             case .userAgreement:
                 return "https://sites.google.com/view/zixy/users"

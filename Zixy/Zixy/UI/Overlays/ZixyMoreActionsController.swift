@@ -30,7 +30,7 @@ final class ZixyMoreActionsController: UIViewController {
     }()
 
     private lazy var followedButton = makeActionButton(
-        title: "Followed",
+        title: isFollowing ? "Following" : "Follow",
         action: #selector(followedSelected)
     )
 
@@ -56,7 +56,10 @@ final class ZixyMoreActionsController: UIViewController {
         return button
     }()
 
-    init(targetName: String) {
+    private let isFollowing: Bool
+
+    init(targetName: String, isFollowing: Bool) {
+        self.isFollowing = isFollowing
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve

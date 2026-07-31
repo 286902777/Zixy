@@ -515,7 +515,16 @@ final class ZixyConversationController: UIViewController {
             return
         }
 
-        let controller = ZixyMoreActionsController(targetName: participantName)
+        let isFollowing = participantEmail.map {
+            ZixyDataStore.shared.isFollowing(
+                $0,
+                from: ZixySessionStore.currentUserIdentifier
+            )
+        } ?? false
+        let controller = ZixyMoreActionsController(
+            targetName: participantName,
+            isFollowing: isFollowing
+        )
         controller.onFollowed = { [weak self] in
             guard let self else {
                 return

@@ -87,8 +87,11 @@ final class ZixyOtherProfileController: UIViewController {
         image: UIImage(named: "zixy_ai_chat_back_button"),
         accessibilityLabel: "Back"
     )
-    private let followButton = UIButton()
-    
+    private let followButton = ZixyOtherProfileController.makeRoundButton(
+        image: ZixyImageLibrary.otherProfileFollowIcon,
+        accessibilityLabel: "Follow"
+    )
+
     private let moreButton = ZixyOtherProfileController.makeRoundButton(
         image: ZixyImageLibrary.otherProfileMoreIcon,
         accessibilityLabel: "More"
@@ -344,12 +347,12 @@ final class ZixyOtherProfileController: UIViewController {
     private func updateUserActions() {
         let canActOnUser = !profile.isCurrentUser
             && ZixySessionStore.allowsSocialInteraction
-        followButton.isHidden = !canActOnUser
+        followButton.isHidden = !canActOnUser || isFollowing
         moreButton.isHidden = !canActOnUser
         messageButton.isEnabled = canActOnUser
         videoButton.isEnabled = canActOnUser
-        followButton.accessibilityLabel = isFollowing ? "Unfollow" : "Follow"
-        followButton.alpha = isFollowing ? 0.65 : 1
+        followButton.accessibilityLabel = "Follow"
+        followButton.alpha = 1
     }
 
     private var targetUserEmail: String? {
@@ -380,15 +383,15 @@ final class ZixyOtherProfileController: UIViewController {
     @objc private func followTapped() {
         guard
             ZixySessionStore.allowsSocialInteraction,
-            !profile.isCurrentUser
+            !profile.isCurrentUser,
+            !isFollowing
         else {
             return
         }
-        let shouldFollow = !isFollowing
         if let targetEmail = targetUserEmail {
             do {
                 try ZixyDataStore.shared.setFollowing(
-                    shouldFollow,
+                    true,
                     followedEmail: targetEmail,
                     followerEmail: ZixySessionStore.currentUserIdentifier
                 )
@@ -397,10 +400,10 @@ final class ZixyOtherProfileController: UIViewController {
                 return
             }
         }
-        isFollowing = shouldFollow
-        followButton.accessibilityLabel = isFollowing ? "Unfollow" : "Follow"
-        followButton.alpha = isFollowing ? 0.65 : 1
-        showToast(isFollowing ? "Following \(profile.name)." : "Unfollowed \(profile.name).")
+        isFollowing = true
+        updateUserActions()
+        reloadProfile()
+        showToast("Following \(profile.name).")
     }
 
     @objc private func moreTapped() {
@@ -411,7 +414,10 @@ final class ZixyOtherProfileController: UIViewController {
             return
         }
 
-        let controller = ZixyMoreActionsController(targetName: profile.name)
+        let controller = ZixyMoreActionsController(
+            targetName: profile.name,
+            isFollowing: isFollowing
+        )
         controller.onFollowed = { [weak self] in
             guard let self else {
                 return
@@ -431,8 +437,8 @@ final class ZixyOtherProfileController: UIViewController {
                     followerEmail: ZixySessionStore.currentUserIdentifier
                 )
                 self.isFollowing = true
-                self.followButton.accessibilityLabel = "Unfollow"
-                self.followButton.alpha = 0.65
+                self.updateUserActions()
+                self.reloadProfile()
                 self.showToast("Followed \(self.profile.name).")
             } catch {
                 self.showToast("Unable to follow \(self.profile.name).")

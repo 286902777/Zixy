@@ -829,6 +829,22 @@ final class ZixyDataStore {
             }
     }
 
+    func room(id: String, visibleTo email: String) -> ZixyRoomRecord? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: Entity.room)
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "id == %@", id)
+        let restrictedEmails = restrictedUserEmails(for: email)
+        return (try? container.viewContext.fetch(request).first)
+            .flatMap { $0 }
+            .flatMap(makeRoomRecord)
+            .flatMap {
+                roomRecord(
+                    $0,
+                    excluding: restrictedEmails
+                )
+            }
+    }
+
     @discardableResult
     func joinRoom(id: String, userEmail: String) throws -> ZixyRoomRecord {
         let normalizedEmail = Self.normalizeEmail(userEmail)
