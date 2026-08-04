@@ -3,6 +3,7 @@ import UIKit
 enum ZixyImageLibrary {
 
     static let userAvatar = UIImage(named: "zixy_user_avatar")
+    static let launchBackground = UIImage(named: "zixy_launch_background")
     static let pageBackground = UIImage(named: "zixy_page_background")
     static let logo = UIImage(named: "zixy_logo")
     static let eulaPanel = UIImage(named: "zixy_eula_panel")

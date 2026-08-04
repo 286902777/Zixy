@@ -2,10 +2,26 @@ import UIKit
 
 final class ZixyAccessCoordinator: UINavigationController {
 
+    enum EntryStyle {
+        case standard
+        case accountOnly
+    }
+
     var onAuthenticated: (() -> Void)?
     var onGuestAccess: (() -> Void)?
+    private let entryStyle: EntryStyle
     private var pendingRegistrationIdentifier: String?
     private var pendingRegistrationPassword: String?
+
+    init(entryStyle: EntryStyle = .standard) {
+        self.entryStyle = entryStyle
+        super.init(navigationBarClass: nil, toolbarClass: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        entryStyle = .standard
+        super.init(coder: coder)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -16,6 +32,15 @@ final class ZixyAccessCoordinator: UINavigationController {
     }
 
     private func showEntry() {
+        switch entryStyle {
+        case .standard:
+            showStandardEntry()
+        case .accountOnly:
+            showAccountEntry()
+        }
+    }
+
+    private func showStandardEntry() {
         let controller = ZixyGatewayController()
         controller.onLoginByEmail = { [weak self] in
             self?.showLogin(mode: .signIn)
@@ -25,6 +50,14 @@ final class ZixyAccessCoordinator: UINavigationController {
         }
         controller.onSignUp = { [weak self] in
             self?.showLogin(mode: .signUp)
+        }
+        setViewControllers([controller], animated: false)
+    }
+
+    private func showAccountEntry() {
+        let controller = ZixyAccountGatewayController()
+        controller.onLoginByEmail = { [weak self] in
+            self?.showLogin(mode: .signIn)
         }
         setViewControllers([controller], animated: false)
     }

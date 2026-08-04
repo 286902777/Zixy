@@ -6,12 +6,10 @@
 //
 
 import UIKit
-import Darwin
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-    private var isPresentingRequiredEULA = false
 
 
     func scene(
@@ -24,14 +22,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         try? ZixyDataStore.shared.prepareIfNeeded()
-        let hasAcceptedEULA = UserDefaults.standard.bool(
-            forKey: ZixyTermsController.acceptedDefaultsKey
-        )
-        let canRestoreSession = hasAcceptedEULA
-            && ZixySessionStore.hasActiveSession
-        let rootController: UIViewController = canRestoreSession
-            ? ZixyMainContainerController(isGuest: ZixySessionStore.isGuest)
-            : makeZixyAccessCoordinator()
+        let rootController = ZixyLaunchController { [weak self] succeeded in
+            self?.handleLaunchResult(succeeded)
+        }
 
         if window == nil {
             window = UIWindow(windowScene: windowScene)
@@ -40,8 +33,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.makeKeyAndVisible()
     }
 
-    private func makeZixyAccessCoordinator() -> ZixyAccessCoordinator {
-        let controller = ZixyAccessCoordinator()
+    private func makeZixyAccessCoordinator(
+        entryStyle: ZixyAccessCoordinator.EntryStyle = .standard
+    ) -> ZixyAccessCoordinator {
+        let controller = ZixyAccessCoordinator(entryStyle: entryStyle)
         controller.onAuthenticated = { [weak self] in
             self?.showMainInterface(asGuest: false)
         }
@@ -51,33 +46,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         return controller
     }
 
-    private func presentEULAIfNeeded(from presenter: UIViewController) {
-        guard
-            !UserDefaults.standard.bool(
-                forKey: ZixyTermsController.acceptedDefaultsKey
-            ),
-            !isPresentingRequiredEULA
-        else {
-            return
+    private func handleLaunchResult(_ succeeded: Bool) {
+        if succeeded {
+            showAccountAuthenticationInterface()
+        } else {
+            routeUsingStoredSession()
         }
+    }
 
-        isPresentingRequiredEULA = true
-        let controller = ZixyTermsController(
-            requiresAcceptance: true,
-            onAgree: { [weak self, weak presenter] in
-                presenter?.dismiss(animated: true) {
-                    self?.isPresentingRequiredEULA = false
-                }
-            },
-            onCancel: {
-                exit(EXIT_SUCCESS)
-            }
-        )
-        controller.modalPresentationStyle = .overFullScreen
-        controller.modalTransitionStyle = .crossDissolve
-        DispatchQueue.main.async {
-            presenter.present(controller, animated: true)
+    private func routeUsingStoredSession() {
+        if ZixySessionStore.hasActiveSession {
+            showMainInterface(asGuest: ZixySessionStore.isGuest)
+        } else {
+            showAuthenticationInterface()
         }
+    }
+
+    private func showAccountAuthenticationInterface() {
+        replaceRoot(
+            with: makeZixyAccessCoordinator(entryStyle: .accountOnly)
+        )
     }
 
     private func showMainInterface(asGuest: Bool) {
@@ -101,10 +89,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func showAuthenticationInterface() {
+        replaceRoot(with: makeZixyAccessCoordinator())
+    }
+
+    private func replaceRoot(with controller: UIViewController) {
         guard let window else {
             return
         }
-        let controller = makeZixyAccessCoordinator()
         UIView.transition(
             with: window,
             duration: 0.3,
@@ -123,10 +114,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        guard let rootController = window?.rootViewController else {
-            return
-        }
-        presentEULAIfNeeded(from: rootController)
     }
 
     func sceneWillResignActive(_ scene: UIScene) {

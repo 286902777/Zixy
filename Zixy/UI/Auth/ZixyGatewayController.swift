@@ -1,4 +1,5 @@
 import UIKit
+import Darwin
 
 final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate {
 
@@ -8,6 +9,7 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
     var onLoginByEmail: (() -> Void)?
     var onGuestAccess: (() -> Void)?
     var onSignUp: (() -> Void)?
+    private var isPresentingRequiredEULA = false
     private var hasAcceptedTerms = UserDefaults.standard.bool(
         forKey: ZixyGatewayController.termsAcceptanceDefaultsKey
     )
@@ -16,6 +18,39 @@ final class ZixyGatewayController: ZixyAuthCanvasController, UITextViewDelegate 
         super.viewDidLoad()
         configureBackground()
         configureContent()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        presentEULAIfNeeded()
+    }
+
+    private func presentEULAIfNeeded() {
+        guard
+            !UserDefaults.standard.bool(
+                forKey: ZixyTermsController.acceptedDefaultsKey
+            ),
+            !isPresentingRequiredEULA,
+            presentedViewController == nil
+        else {
+            return
+        }
+
+        isPresentingRequiredEULA = true
+        let controller = ZixyTermsController(
+            requiresAcceptance: true,
+            onAgree: { [weak self] in
+                self?.dismiss(animated: true) {
+                    self?.isPresentingRequiredEULA = false
+                }
+            },
+            onCancel: {
+                exit(EXIT_SUCCESS)
+            }
+        )
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        present(controller, animated: true)
     }
 
     private func configureBackground() {
@@ -353,7 +388,7 @@ private final class TermsSelectionButton: UIButton {
     }
 }
 
-private final class AuthEntryActionButton: UIControl {
+final class AuthEntryActionButton: UIControl {
 
     private let gradientLayer = CAGradientLayer()
 
