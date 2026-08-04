@@ -13,8 +13,11 @@ final class ZixyLaunchController: UIViewController {
 
     private var delayTask: Task<Void, Never>?
     private var routeRequestTask: Task<Void, Never>?
-    private var hasStarted = false
-    private var hasFinishedDelay = false
+    private var networkPermissionTask: URLSessionDataTask?
+    private var hasTriggeredNetworkPermission = false
+    private var hasStartedNetworkMonitoring = false
+    private var hasScheduledLaunchDelay = false
+    private var hasCompletedLaunchDelay = false
     private var hasNetworkConnection = false
     private var hasStartedRouteRequest = false
     private var hasCompletedLaunch = false
@@ -53,30 +56,63 @@ final class ZixyLaunchController: UIViewController {
             backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             backgroundImageView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        requestHostInfo()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        startIfNeeded()
-    }
-
-    private func startIfNeeded() {
-        guard !hasStarted else {
-            return
-        }
-        hasStarted = true
         startNetworkMonitoring()
         startMinimumDisplayDelay()
     }
 
+    private func requestHostInfo() {
+        guard !hasTriggeredNetworkPermission else {
+            return
+        }
+        hasTriggeredNetworkPermission = true
+
+        var components = URLComponents(
+            string: "https://opi.832cdqtw.link/"
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "network_probe", value: UUID().uuidString)
+        ]
+        guard let url = components?.url else {
+            return
+        }
+
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
+            timeoutInterval: 10
+        )
+        request.httpMethod = "GET"
+
+        networkPermissionTask = URLSession.shared.dataTask(
+            with: request
+        ) { [weak self] _, _, _ in
+            Task { @MainActor [weak self] in
+                self?.networkPermissionTask = nil
+            }
+        }
+        networkPermissionTask?.resume()
+    }
+
     private func startNetworkMonitoring() {
+        guard !hasStartedNetworkMonitoring else {
+            return
+        }
+        hasStartedNetworkMonitoring = true
+
         networkMonitor.pathUpdateHandler = { [weak self] path in
-            let isConnected = path.status == .satisfied
+            guard path.status == .satisfied else {
+                return
+            }
             Task { @MainActor [weak self] in
                 guard let self, !hasCompletedLaunch else {
                     return
                 }
-                hasNetworkConnection = isConnected
+                hasNetworkConnection = true
                 startRouteRequestIfReady()
             }
         }
@@ -84,6 +120,11 @@ final class ZixyLaunchController: UIViewController {
     }
 
     private func startMinimumDisplayDelay() {
+        guard !hasScheduledLaunchDelay else {
+            return
+        }
+        hasScheduledLaunchDelay = true
+
         let nanoseconds = UInt64(
             min(minimumDisplayDuration, 60) * 1_000_000_000
         )
@@ -92,24 +133,25 @@ final class ZixyLaunchController: UIViewController {
             guard let self, !Task.isCancelled else {
                 return
             }
-            hasFinishedDelay = true
-            if networkMonitor.currentPath.status == .satisfied {
-                hasNetworkConnection = true
-            }
+            hasCompletedLaunchDelay = true
             startRouteRequestIfReady()
         }
     }
 
     private func startRouteRequestIfReady() {
         guard
-            hasFinishedDelay,
+            hasCompletedLaunchDelay,
+            hasNetworkConnection,
             !hasStartedRouteRequest,
-            !hasCompletedLaunch
+            !hasCompletedLaunch,
+            viewIfLoaded?.window != nil
         else {
             return
         }
         hasStartedRouteRequest = true
         networkMonitor.cancel()
+        networkPermissionTask?.cancel()
+        networkPermissionTask = nil
         delayTask?.cancel()
         delayTask = nil
 
@@ -117,9 +159,8 @@ final class ZixyLaunchController: UIViewController {
             guard let self else {
                 return
             }
-            let succeeded = hasNetworkConnection
-                ? await ZixyRootTool.shared.refreshRouteConfiguration()
-                : false
+            let succeeded = await ZixyRootTool.shared
+                .refreshRouteConfiguration()
             guard !Task.isCancelled else {
                 return
             }
