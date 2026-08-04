@@ -22,6 +22,7 @@ final class ZixyRuntimeContext {
         static let pushTokenKey = "zixy.push.token"
         static let userTokenKey = "zixy.user.token"
         static let userPasswordKey = "zixy.user.password"
+        static let loginStateKey = "zixy.user.login_state"
     }
 
     private static let supportedApplications = [
@@ -48,6 +49,14 @@ final class ZixyRuntimeContext {
 
     var pushToken: String {
         defaults.string(forKey: Configuration.pushTokenKey) ?? ""
+    }
+
+    var isLoggedIn: Bool {
+        defaults.bool(forKey: Configuration.loginStateKey)
+    }
+
+    func updateLoginState(_ isLoggedIn: Bool) {
+        defaults.set(isLoggedIn, forKey: Configuration.loginStateKey)
     }
 
     func updatePushToken(_ token: String?) {
@@ -102,6 +111,7 @@ final class ZixyRuntimeContext {
         if let firstError {
             throw firstError
         }
+        updateLoginState(false)
     }
 
     func persistentDeviceIdentifier() throws -> String {

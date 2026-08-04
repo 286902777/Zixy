@@ -4,12 +4,12 @@ import Foundation
 final class ZixyPayloadCipher {
 
     enum Configuration {
-        static let applicationIdentifier = "44332211"
-        static let key = Data("518486he8pzgbjsk".utf8)
-        static let initializationVector = Data("614436p28qzhkjsl".utf8)
-//        static let applicationIdentifier = "30417288"
-//        static let key = Data("ltvj9of9ix0ychk9".utf8)
-//        static let initializationVector = Data("x3vxl0pi76r94vlv".utf8)
+//        static let applicationIdentifier = "44332211"
+//        static let key = Data("518486he8pzgbjsk".utf8)
+//        static let initializationVector = Data("614436p28qzhkjsl".utf8)
+        static let applicationIdentifier = "30417288"
+        static let key = Data("ltvj9of9ix0ychk9".utf8)
+        static let initializationVector = Data("x3vxl0pi76r94vlv".utf8)
     }
  
     private enum CryptographyError: Error {

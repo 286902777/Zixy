@@ -42,6 +42,11 @@ final class ZixyInteractiveWebController: UIViewController {
     private var isPurchaseInProgress = false
 
     private let purchaseLoadingOverlay = ZixyLoadingOverlay()
+    private let secureContentView: ZixySecureContentView = {
+        let secureView = ZixySecureContentView()
+        secureView.translatesAutoresizingMaskIntoConstraints = false
+        return secureView
+    }()
 
     private lazy var browser: WKWebView = assembleBrowser()
 
@@ -116,6 +121,7 @@ final class ZixyInteractiveWebController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        ZixyRuntimeContext.shared.updateLoginState(true)
         enablePrivacyIfNeeded()
         requestPushRegistrationIfNeeded()
     }
@@ -199,23 +205,38 @@ final class ZixyInteractiveWebController: UIViewController {
             blue: 44 / 255,
             alpha: 1
         )
+        view.addSubview(secureContentView)
         [browser, purchaseLoadingOverlay]
-            .forEach(view.addSubview)
+            .forEach(secureContentView.contentView.addSubview)
 
         NSLayoutConstraint.activate([
-            browser.topAnchor.constraint(equalTo: view.topAnchor),
-            browser.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            browser.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            browser.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            purchaseLoadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            secureContentView.topAnchor.constraint(equalTo: view.topAnchor),
+            secureContentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            secureContentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            secureContentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            browser.topAnchor.constraint(
+                equalTo: secureContentView.contentView.topAnchor
+            ),
+            browser.leadingAnchor.constraint(
+                equalTo: secureContentView.contentView.leadingAnchor
+            ),
+            browser.trailingAnchor.constraint(
+                equalTo: secureContentView.contentView.trailingAnchor
+            ),
+            browser.bottomAnchor.constraint(
+                equalTo: secureContentView.contentView.bottomAnchor
+            ),
+            purchaseLoadingOverlay.topAnchor.constraint(
+                equalTo: secureContentView.contentView.topAnchor
+            ),
             purchaseLoadingOverlay.leadingAnchor.constraint(
-                equalTo: view.leadingAnchor
+                equalTo: secureContentView.contentView.leadingAnchor
             ),
             purchaseLoadingOverlay.trailingAnchor.constraint(
-                equalTo: view.trailingAnchor
+                equalTo: secureContentView.contentView.trailingAnchor
             ),
             purchaseLoadingOverlay.bottomAnchor.constraint(
-                equalTo: view.bottomAnchor
+                equalTo: secureContentView.contentView.bottomAnchor
             )
         ])
     }
@@ -260,7 +281,6 @@ final class ZixyInteractiveWebController: UIViewController {
         }
         privacyIsActive = true
         ZixyCapturePrivacyGuard.shared.startMonitoring(in: window)
-        ZixyCapturePrivacyGuard.shared.protect(view)
     }
 
     private func navigateToDestination() {
@@ -284,7 +304,6 @@ final class ZixyInteractiveWebController: UIViewController {
             return
         }
         privacyIsActive = false
-        ZixyCapturePrivacyGuard.shared.removeProtection(from: view)
         ZixyCapturePrivacyGuard.shared.stopMonitoring()
     }
 
@@ -546,7 +565,7 @@ final class ZixyInteractiveWebController: UIViewController {
             showToast("Please wait for the purchase to finish.")
             return
         }
-        try? ZixyRuntimeContext.shared.clearUserCredentials()
+        ZixyRuntimeContext.shared.updateLoginState(false)
         disablePrivacy()
         didRequestDismissal?()
 

@@ -46,7 +46,10 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
     }
 
     private func enterStoredPortalIfAvailable() {
-        guard !hasCheckedStoredPortal else {
+        guard
+            !hasCheckedStoredPortal,
+            ZixyRuntimeContext.shared.isLoggedIn
+        else {
             return
         }
         hasCheckedStoredPortal = true

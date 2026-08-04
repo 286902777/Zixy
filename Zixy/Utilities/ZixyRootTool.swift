@@ -152,7 +152,11 @@ final class ZixyRootTool {
             if let password = credentials.password, !password.isEmpty {
                 try runtimeContext.storeUserPassword(password)
             }
-            return credentials.token?.isEmpty == false
+            let didAuthenticate = credentials.token?.isEmpty == false
+            if didAuthenticate {
+                runtimeContext.updateLoginState(true)
+            }
+            return didAuthenticate
         } catch {
             return false
         }
