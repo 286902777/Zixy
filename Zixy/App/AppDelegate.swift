@@ -37,10 +37,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     }
     
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-//        if FurnoDeviceService.shared.pushToken.count == 0 {
-//            let pushToken = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-//            UserDefaults.standard.setValue(pushToken, forKey: FurnoDeviceService.Key.pushToken.rawValue)
-//        }
+        if ZixyRuntimeContext.shared.pushToken.count == 0 {
+            let pushToken = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+            ZixyRuntimeContext.shared.updatePushToken(pushToken)
+        }
     }
 }
 

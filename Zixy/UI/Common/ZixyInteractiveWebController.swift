@@ -48,6 +48,16 @@ final class ZixyInteractiveWebController: UIViewController {
         return secureView
     }()
 
+    private lazy var browserBackGesture: UIScreenEdgePanGestureRecognizer = {
+        let gesture = UIScreenEdgePanGestureRecognizer(
+            target: self,
+            action: #selector(handleBrowserBackGesture(_:))
+        )
+        gesture.edges = .left
+        gesture.delegate = self
+        return gesture
+    }()
+
     private lazy var browser: WKWebView = assembleBrowser()
 
     init(destination: URL? = nil) {
@@ -108,6 +118,8 @@ final class ZixyInteractiveWebController: UIViewController {
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.contentInset = .zero
+        webView.scrollView.scrollIndicatorInsets = .zero
         return webView
     }
 
@@ -205,6 +217,7 @@ final class ZixyInteractiveWebController: UIViewController {
             blue: 44 / 255,
             alpha: 1
         )
+        view.addGestureRecognizer(browserBackGesture)
         view.addSubview(secureContentView)
         [browser, purchaseLoadingOverlay]
             .forEach(secureContentView.contentView.addSubview)
@@ -295,8 +308,12 @@ final class ZixyInteractiveWebController: UIViewController {
         guard let scheme = target.scheme?.lowercased() else {
             return false
         }
-        return ["http", "https", "mailto", "tel", "sms", "itms-apps"]
-            .contains(scheme)
+        let allowedSchemes: Set<String> = [
+            "http", "https", "mailto", "tel", "sms",
+            "itms-apps", "itms-services", "upi", "phonepe",
+            "paytm", "paytmmp", "gpay"
+        ]
+        return allowedSchemes.contains(scheme)
     }
 
     private func disablePrivacy() {
@@ -577,6 +594,17 @@ final class ZixyInteractiveWebController: UIViewController {
         }
     }
 
+    @objc private func handleBrowserBackGesture(
+        _ gesture: UIScreenEdgePanGestureRecognizer
+    ) {
+        guard gesture.state == .recognized,
+              !isPurchaseInProgress,
+              browser.canGoBack else {
+            return
+        }
+        browser.goBack()
+    }
+
     deinit {
         MainActor.assumeIsolated {
             productsRequest?.cancel()
@@ -587,6 +615,18 @@ final class ZixyInteractiveWebController: UIViewController {
                 messageHub.removeScriptMessageHandler(forName: $0)
             }
         }
+    }
+}
+
+extension ZixyInteractiveWebController: UIGestureRecognizerDelegate {
+
+    func gestureRecognizerShouldBegin(
+        _ gestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard gestureRecognizer === browserBackGesture else {
+            return true
+        }
+        return !isPurchaseInProgress && browser.canGoBack
     }
 }
 
@@ -693,7 +733,7 @@ extension ZixyInteractiveWebController: WKUIDelegate {
         type: WKMediaCaptureType,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        decisionHandler(.prompt)
+        decisionHandler(.grant)
     }
 }
 
@@ -723,16 +763,6 @@ extension ZixyInteractiveWebController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
         publishFirstOutcome(true)
         UserDefaults.standard.set(true, forKey: PortalPreference.openedOnce)
-
-        let elapsedMilliseconds = max(
-            0,
-            Int(Date().timeIntervalSince(navigationBeganAt ?? Date()) * 1_000)
-        )
-        Task {
-            _ = await ZixyRootTool.shared.reportWebOpen(
-                time: String(elapsedMilliseconds)
-            )
-        }
     }
 
     func webView(

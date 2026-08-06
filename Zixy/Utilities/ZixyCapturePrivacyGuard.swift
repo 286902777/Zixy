@@ -5,7 +5,14 @@ final class ZixySecureContentView: UIView {
 
     let contentView = UIView()
 
+    private enum Installation {
+        static let retryDelay: TimeInterval = 0.05
+        static let maximumAttempts = 10
+    }
+
     private let secureTextField = ZixyNonEditingSecureTextField()
+    private var installationWorkItem: DispatchWorkItem?
+    private var installationAttempts = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -17,6 +24,28 @@ final class ZixySecureContentView: UIView {
         configureSecureHierarchy()
     }
 
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        installProtectedContainerIfAvailable()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+
+        guard window != nil else {
+            installationWorkItem?.cancel()
+            installationWorkItem = nil
+            installationAttempts = 0
+            return
+        }
+        installProtectedContainerIfAvailable()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        installProtectedContainerIfAvailable()
+    }
+
     private func configureSecureHierarchy() {
         clipsToBounds = true
 
@@ -24,8 +53,10 @@ final class ZixySecureContentView: UIView {
         secureTextField.backgroundColor = .clear
         secureTextField.borderStyle = .none
         secureTextField.isSecureTextEntry = true
+        secureTextField.text = " "
         secureTextField.textColor = .clear
         secureTextField.tintColor = .clear
+        secureTextField.isAccessibilityElement = false
         addSubview(secureTextField)
 
         NSLayoutConstraint.activate([
@@ -35,19 +66,72 @@ final class ZixySecureContentView: UIView {
             secureTextField.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
-        secureTextField.layoutIfNeeded()
-        let protectedContainer = secureTextField.subviews.first {
-            String(describing: type(of: $0)).contains("CanvasView")
-        } ?? secureTextField
-
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentView.backgroundColor = .clear
-        protectedContainer.addSubview(contentView)
+    }
+
+    private func installProtectedContainerIfAvailable() {
+        guard contentView.superview == nil else {
+            return
+        }
+
+        secureTextField.layoutIfNeeded()
+        guard let container = findSecureCanvas(in: secureTextField) else {
+            scheduleInstallationRetryIfNeeded()
+            return
+        }
+
+        installationWorkItem?.cancel()
+        installationWorkItem = nil
+        installationAttempts = 0
+        embedContent(in: container)
+    }
+
+    private func scheduleInstallationRetryIfNeeded() {
+        guard window != nil,
+              installationWorkItem == nil,
+              installationAttempts < Installation.maximumAttempts else {
+            return
+        }
+
+        installationAttempts += 1
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else {
+                return
+            }
+            self.installationWorkItem = nil
+            self.installProtectedContainerIfAvailable()
+        }
+        installationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Installation.retryDelay,
+            execute: workItem
+        )
+    }
+
+    private func findSecureCanvas(in root: UIView) -> UIView? {
+        for child in root.subviews where child !== contentView {
+            let className = String(describing: type(of: child))
+            if className.contains("CanvasView") {
+                return child
+            }
+            if let nestedCanvas = findSecureCanvas(in: child) {
+                return nestedCanvas
+            }
+        }
+        return nil
+    }
+
+    private func embedContent(in container: UIView) {
+        guard contentView.superview == nil else {
+            return
+        }
+        container.addSubview(contentView)
         NSLayoutConstraint.activate([
-            contentView.topAnchor.constraint(equalTo: protectedContainer.topAnchor),
-            contentView.leadingAnchor.constraint(equalTo: protectedContainer.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: protectedContainer.trailingAnchor),
-            contentView.bottomAnchor.constraint(equalTo: protectedContainer.bottomAnchor)
+            contentView.topAnchor.constraint(equalTo: container.topAnchor),
+            contentView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            contentView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
     }
 }
@@ -108,7 +192,7 @@ final class ZixyCapturePrivacyGuard {
                 }
             },
             center.addObserver(
-                forName: UIApplication.willResignActiveNotification,
+                forName: UIApplication.didEnterBackgroundNotification,
                 object: nil,
                 queue: .main
             ) { [weak self] _ in

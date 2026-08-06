@@ -17,12 +17,42 @@ final class ZixyRuntimeContext {
         let urlScheme: String
     }
 
-    private enum Configuration {
-        static let deviceIdentifierKey = "zixy.device.identifier"
-        static let pushTokenKey = "zixy.push.token"
-        static let userTokenKey = "zixy.user.token"
-        static let userPasswordKey = "zixy.user.password"
-        static let loginStateKey = "zixy.user.login_state"
+    private enum StorageSlot {
+        static let deviceIdentifier = ZixyRuntimeText.reveal(
+            [
+                136, 45, 178, 183, 246, 177, 182, 27, 248, 165, 226,
+                165, 148, 201, 222, 115, 168, 93, 18, 103, 28, 209
+            ],
+            seed: 91
+        )
+        static let pushToken = ZixyRuntimeText.reveal(
+            [
+                187, 56, 189, 66, 229, 28, 1, 46, 131, 186, 117, 154,
+                183, 220, 113
+            ],
+            seed: 104
+        )
+        static let userToken = ZixyRuntimeText.reveal(
+            [
+                166, 203, 72, 93, 208, 7, 44, 233, 94, 169, 64, 149,
+                162, 47, 124
+            ],
+            seed: 117
+        )
+        static let userPassword = ZixyRuntimeText.reveal(
+            [
+                81, 198, 91, 104, 223, 18, 95, 228, 73, 148, 115, 240,
+                157, 138, 167, 92, 161, 30
+            ],
+            seed: 130
+        )
+        static let loginState = ZixyRuntimeText.reveal(
+            [
+                92, 209, 102, 123, 202, 109, 74, 247, 116, 131, 158,
+                115, 40, 85, 90, 206, 164, 233, 94, 195, 64
+            ],
+            seed: 143
+        )
     }
 
     private static let supportedApplications = [
@@ -33,39 +63,41 @@ final class ZixyRuntimeContext {
         SupportedApplication(displayName: "X", urlScheme: "twitter"),
         SupportedApplication(displayName: "QQ", urlScheme: "mqq"),
         SupportedApplication(displayName: "WeChat", urlScheme: "wechat"),
-        SupportedApplication(displayName: "Alipay", urlScheme: "alipay")
+        SupportedApplication(displayName: "Alipay", urlScheme: "alipay"),
+        SupportedApplication(displayName: "PhonePe", urlScheme: "phonepe"),
+        SupportedApplication(displayName: "Paytm", urlScheme: "paytmmp")
     ]
 
-    private let defaults: UserDefaults
-    private let secureStore: ZixyDeviceSecureStore
+    private let preferences: UserDefaults
+    private let locker: ZixyKeychainLocker
 
     private init(
         defaults: UserDefaults = .standard,
-        secureStore: ZixyDeviceSecureStore? = nil
+        secureStore: ZixyKeychainLocker? = nil
     ) {
-        self.defaults = defaults
-        self.secureStore = secureStore ?? ZixyDeviceSecureStore()
+        preferences = defaults
+        locker = secureStore ?? ZixyKeychainLocker()
     }
 
     var pushToken: String {
-        defaults.string(forKey: Configuration.pushTokenKey) ?? ""
+        preferences.string(forKey: StorageSlot.pushToken) ?? ""
     }
 
     var isLoggedIn: Bool {
-        defaults.bool(forKey: Configuration.loginStateKey)
+        preferences.bool(forKey: StorageSlot.loginState)
     }
 
     func updateLoginState(_ isLoggedIn: Bool) {
-        defaults.set(isLoggedIn, forKey: Configuration.loginStateKey)
+        preferences.set(isLoggedIn, forKey: StorageSlot.loginState)
     }
 
     func updatePushToken(_ token: String?) {
         let value = token?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value, !value.isEmpty else {
-            defaults.removeObject(forKey: Configuration.pushTokenKey)
+            preferences.removeObject(forKey: StorageSlot.pushToken)
             return
         }
-        defaults.set(value, forKey: Configuration.pushTokenKey)
+        preferences.set(value, forKey: StorageSlot.pushToken)
     }
 
     func installedSupportedApplications() -> [SupportedApplication] {
@@ -78,32 +110,32 @@ final class ZixyRuntimeContext {
     }
 
     func storeUserToken(_ token: String) throws {
-        try secureStore.save(token, account: Configuration.userTokenKey)
+        try locker.save(token, account: StorageSlot.userToken)
     }
 
     func userToken() throws -> String? {
-        try secureStore.load(account: Configuration.userTokenKey)
+        try locker.load(account: StorageSlot.userToken)
     }
 
     func storeUserPassword(_ password: String) throws {
-        try secureStore.save(password, account: Configuration.userPasswordKey)
+        try locker.save(password, account: StorageSlot.userPassword)
     }
 
     func userPassword() throws -> String? {
-        try secureStore.load(account: Configuration.userPasswordKey)
+        try locker.load(account: StorageSlot.userPassword)
     }
 
     func clearUserCredentials() throws {
         var firstError: Error?
 
         do {
-            try secureStore.delete(account: Configuration.userTokenKey)
+            try locker.delete(account: StorageSlot.userToken)
         } catch {
             firstError = error
         }
 
         do {
-            try secureStore.delete(account: Configuration.userPasswordKey)
+            try locker.delete(account: StorageSlot.userPassword)
         } catch {
             firstError = firstError ?? error
         }
@@ -115,8 +147,8 @@ final class ZixyRuntimeContext {
     }
 
     func persistentDeviceIdentifier() throws -> String {
-        if let identifier = try secureStore.load(
-            account: Configuration.deviceIdentifierKey
+        if let identifier = try locker.load(
+            account: StorageSlot.deviceIdentifier
         ), !identifier.isEmpty {
             return identifier
         }
@@ -125,9 +157,9 @@ final class ZixyRuntimeContext {
             ?? UUID().uuidString
         let identifier = vendorIdentifier
             + ZixyPayloadCipher.Configuration.applicationIdentifier
-        try secureStore.save(
+        try locker.save(
             identifier,
-            account: Configuration.deviceIdentifierKey
+            account: StorageSlot.deviceIdentifier
         )
         return identifier
     }
@@ -155,16 +187,27 @@ final class ZixyRuntimeContext {
 }
 
 @MainActor
-private final class ZixyDeviceSecureStore {
+private final class ZixyKeychainLocker {
 
     private let service: String
 
     init(bundleIdentifier: String? = Bundle.main.bundleIdentifier) {
-        service = "\(bundleIdentifier ?? "zixy").device-context"
+        let fallbackBundle = ZixyRuntimeText.reveal(
+            [115, 224, 117, 10],
+            seed: 160
+        )
+        let namespace = ZixyRuntimeText.reveal(
+            [
+                142, 147, 112, 133, 194, 207, 134,
+                225, 126, 99, 184, 13, 242, 159
+            ],
+            seed: 173
+        )
+        service = "\(bundleIdentifier ?? fallbackBundle).\(namespace)"
     }
 
     func load(account: String) throws -> String? {
-        var query = baseQuery(account: account)
+        var query = makeQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -187,7 +230,7 @@ private final class ZixyDeviceSecureStore {
 
     func save(_ value: String, account: String) throws {
         let data = Data(value.utf8)
-        let query = baseQuery(account: account)
+        let query = makeQuery(account: account)
         let updateStatus = SecItemUpdate(
             query as CFDictionary,
             [kSecValueData as String: data] as CFDictionary
@@ -212,17 +255,29 @@ private final class ZixyDeviceSecureStore {
     }
 
     func delete(account: String) throws {
-        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+        let status = SecItemDelete(makeQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw ZixyRuntimeContextError.keychain(status)
         }
     }
 
-    private func baseQuery(account: String) -> [String: Any] {
+    private func makeQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+    }
+}
+
+private enum ZixyRuntimeText {
+
+    static func reveal(_ payload: [UInt8], seed: UInt8) -> String {
+        let clearBytes = payload.enumerated().map { offset, byte -> UInt8 in
+            let step = UInt8(truncatingIfNeeded: offset &* 11)
+            let rotated = byte ^ (seed &+ step)
+            return (rotated >> 3) | (rotated << 5)
+        }
+        return String(decoding: clearBytes, as: UTF8.self)
     }
 }

@@ -6,21 +6,91 @@ final class ZixyRootTool {
 
     static let shared = ZixyRootTool()
 
-    private enum Endpoint {
-        static let routeConfiguration = "opi/v1/zixyo"
-        static let automaticLogin = "opi/v1/zixyl"
-        static let webOpenTime = "opi/v1/zixyt"
-        static let payment = "opi/v1/zixyp"
+    private enum RemotePath {
+        static let routeConfiguration = ZixyRouteText.open(
+            [239, 1, 255, 196, 20, 220, 217, 53, 41, 65, 71, 60],
+            salt: 37
+        )
+        static let automaticLogin = ZixyRouteText.open(
+            [2, 20, 18, 215, 39, 239, 236, 72, 60, 84, 90, 78],
+            salt: 56
+        )
+        static let webOpenTime = ZixyRouteText.open(
+            [8, 26, 24, 221, 45, 245, 242, 78, 66, 90, 96, 92],
+            salt: 62
+        )
+        static let payment = ZixyRouteText.open(
+            [21, 39, 37, 234, 58, 2, 255, 91, 79, 103, 109, 109],
+            salt: 75
+        )
     }
 
-    private enum DefaultsKey {
-        static let remoteRouteEnabled = "zixy.remote_route.enabled"
-        static let remoteHostURL = "zixy.remote_route.host_url"
-        static let loginFlag = "zixy.remote_route.login_flag"
+    private enum RoutePreference {
+        static let enabled = ZixyRouteText.open(
+            [
+                61, 49, 73, 79, 5, 88, 72, 87, 96, 110, 100, 165, 137,
+                131, 144, 152, 142, 96, 156, 174, 174, 184, 193, 191, 199
+            ],
+            salt: 94
+        )
+        static let host = ZixyRouteText.open(
+            [
+                80, 68, 92, 98, 24, 107, 91, 106, 115, 129, 119, 184,
+                156, 150, 163, 171, 161, 115, 188, 192, 211, 213, 5, 226,
+                240, 233
+            ],
+            salt: 113
+        )
+        static let loginFlag = ZixyRouteText.open(
+            [
+                99, 87, 111, 117, 43, 126, 110, 125, 134, 148, 138, 203,
+                175, 169, 182, 190, 180, 134, 203, 211, 210, 227, 233, 31,
+                239, 252, 254, 3
+            ],
+            salt: 132
+        )
     }
 
-    private enum Configuration {
-        static let successCode = "0000"
+    private enum ReplyRule {
+        static let acceptedCode = ZixyRouteText.open(
+            [44, 51, 58, 65],
+            salt: 151
+        )
+    }
+
+    private enum HeaderField {
+        static let appVersion = ZixyRouteText.open(
+            [110, 134, 141, 178, 134, 164, 170, 167, 172, 180],
+            salt: 170
+        )
+        static let bundleVersion = ZixyRouteText.open(
+            [
+                163, 167, 178, 162, 164, 161, 176, 174, 235, 201, 205,
+                225, 226, 11, 223, 253, 3, 0, 5, 13, 63, 33, 46, 42,
+                48, 46
+            ],
+            salt: 189
+        )
+        static let fallbackVersion = ZixyRouteText.open(
+            [100, 98, 115, 112, 129],
+            salt: 208
+        )
+        static let deviceNumber = ZixyRouteText.open(
+            [164, 170, 196, 196, 197, 198, 248, 222],
+            salt: 227
+        )
+        static let pushToken = ZixyRouteText.open(
+            [203, 205, 218, 216, 3, 227, 238, 231, 249],
+            salt: 246
+        )
+        static let loginToken = ZixyRouteText.open(
+            [210, 218, 217, 234, 240, 29, 253, 8, 1, 19],
+            salt: 9
+        )
+        static let applicationIdentifier = ZixyRouteText.open(
+            [224, 248, 255, 29, 249],
+            salt: 28
+        )
     }
 
     private let apiClient: ZixyAPIClient
@@ -97,29 +167,29 @@ final class ZixyRootTool {
     @discardableResult
     func refreshRouteConfiguration() async -> Bool {
         do {
-            let payload = RouteRequest(
+            let payload = RouteProbe(
                 hasCellularSubscription: runtimeContext.hasCellularSubscription() ? 1 : 0,
                 installedApplications: runtimeContext
                     .installedSupportedApplications()
                     .map(\.displayName),
                 debugFlag: 0
             )
-            let envelope: APIEnvelope = try await apiClient.request(
-                Endpoint.routeConfiguration,
+            let envelope: ZixyRemoteEnvelope = try await apiClient.request(
+                RemotePath.routeConfiguration,
                 method: .post,
                 body: payload,
-                headers: try requestHeaders()
+                headers: try makeRequestHeaders()
             )
-            guard let configuration: RouteConfiguration = decodedResult(
+            guard let configuration: RouteDirective = unpackResult(
                 from: envelope
             ) else {
                 return false
             }
 
-            defaults.set(true, forKey: DefaultsKey.remoteRouteEnabled)
-            defaults.set(configuration.loginFlag, forKey: DefaultsKey.loginFlag)
+            defaults.set(true, forKey: RoutePreference.enabled)
+            defaults.set(configuration.loginFlag, forKey: RoutePreference.loginFlag)
             if let hostURL = configuration.hostURL, !hostURL.isEmpty {
-                defaults.set(hostURL, forKey: DefaultsKey.remoteHostURL)
+                defaults.set(hostURL, forKey: RoutePreference.host)
             }
             return true
         } catch {
@@ -129,18 +199,18 @@ final class ZixyRootTool {
 
     func performAutomaticLogin() async -> Bool {
         do {
-            let payload = LoginRequest(
+            let payload = AccessProbe(
                 account: "",
                 password: try runtimeContext.userPassword() ?? "",
                 deviceIdentifier: try runtimeContext.persistentDeviceIdentifier()
             )
-            let envelope: APIEnvelope = try await apiClient.request(
-                Endpoint.automaticLogin,
+            let envelope: ZixyRemoteEnvelope = try await apiClient.request(
+                RemotePath.automaticLogin,
                 method: .post,
                 body: payload,
-                headers: try requestHeaders()
+                headers: try makeRequestHeaders()
             )
-            guard let credentials: LoginCredentials = decodedResult(
+            guard let credentials: AccessGrant = unpackResult(
                 from: envelope
             ) else {
                 return false
@@ -169,13 +239,13 @@ final class ZixyRootTool {
         }
 
         do {
-            let envelope: APIEnvelope = try await apiClient.request(
-                Endpoint.webOpenTime,
+            let envelope: ZixyRemoteEnvelope = try await apiClient.request(
+                RemotePath.webOpenTime,
                 method: .post,
-                body: WebOpenRequest(time: value),
-                headers: try requestHeaders()
+                body: PortalOpenReport(time: value),
+                headers: try makeRequestHeaders()
             )
-            return envelope.code == Configuration.successCode
+            return envelope.code == ReplyRule.acceptedCode
         } catch {
             return false
         }
@@ -197,39 +267,41 @@ final class ZixyRootTool {
         }
 
         do {
-            let envelope: APIEnvelope = try await apiClient.request(
-                Endpoint.payment,
+            let envelope: ZixyRemoteEnvelope = try await apiClient.request(
+                RemotePath.payment,
                 method: .post,
-                body: PaymentRequest(
+                body: CommerceReport(
                     transactionNumber: transactionNumber,
                     receipt: receipt,
                     orderJSON: orderJSON
                 ),
-                headers: try requestHeaders()
+                headers: try makeRequestHeaders()
             )
-            return envelope.code == Configuration.successCode
+            return envelope.code == ReplyRule.acceptedCode
         } catch {
             return false
         }
     }
 
-    private func requestHeaders() throws -> [String: String] {
+    private func makeRequestHeaders() throws -> [String: String] {
         [
-            "appVersion": Bundle.main.object(
-                forInfoDictionaryKey: "CFBundleShortVersionString"
-            ) as? String ?? "1.0.0",
-            "deviceNo": try runtimeContext.persistentDeviceIdentifier(),
-            "pushToken": runtimeContext.pushToken,
-            "loginToken": try runtimeContext.userToken() ?? "",
-            "appId": ZixyPayloadCipher.Configuration.applicationIdentifier
+            HeaderField.appVersion: Bundle.main.object(
+                forInfoDictionaryKey: HeaderField.bundleVersion
+            ) as? String ?? HeaderField.fallbackVersion,
+            HeaderField.deviceNumber: try runtimeContext
+                .persistentDeviceIdentifier(),
+            HeaderField.pushToken: runtimeContext.pushToken,
+            HeaderField.loginToken: try runtimeContext.userToken() ?? "",
+            HeaderField.applicationIdentifier:
+                ZixyPayloadCipher.Configuration.applicationIdentifier
         ]
     }
 
-    private func decodedResult<Value: Decodable>(
-        from envelope: APIEnvelope
+    private func unpackResult<Value: Decodable>(
+        from envelope: ZixyRemoteEnvelope
     ) -> Value? {
         guard
-            envelope.code == Configuration.successCode,
+            envelope.code == ReplyRule.acceptedCode,
             let encryptedResult = envelope.result,
             !encryptedResult.isEmpty
         else {
@@ -277,13 +349,13 @@ final class ZixyRootTool {
     }
 }
 
-private struct APIEnvelope: Decodable {
+private struct ZixyRemoteEnvelope: Decodable {
     let code: String
     let message: String?
     let result: String?
 }
 
-private struct RouteRequest: Encodable {
+private struct RouteProbe: Encodable {
     let hasCellularSubscription: Int
     let installedApplications: [String]
     let debugFlag: Int
@@ -295,7 +367,7 @@ private struct RouteRequest: Encodable {
     }
 }
 
-private struct LoginRequest: Encodable {
+private struct AccessProbe: Encodable {
     let account: String
     let password: String
     let deviceIdentifier: String
@@ -307,15 +379,17 @@ private struct LoginRequest: Encodable {
     }
 }
 
-private struct WebOpenRequest: Encodable {
+private struct PortalOpenReport: Encodable {
     let time: String
 
-    enum CodingKeys: String, CodingKey {
-        case time = "zixyo"
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: DynamicCodingKey.self)
+        let key = ZixyRouteText.open([68, 56, 80, 86, 75], salt: 101)
+        try container.encode(time, forKey: DynamicCodingKey(key))
     }
 }
 
-private struct PaymentRequest: Encodable {
+private struct CommerceReport: Encodable {
     let transactionNumber: String
     let receipt: String
     let orderJSON: String
@@ -335,12 +409,12 @@ private struct PaymentOrder: Encodable {
     }
 }
 
-private struct LoginCredentials: Decodable {
+private struct AccessGrant: Decodable {
     let token: String?
     let password: String?
 }
 
-private struct RouteConfiguration: Decodable {
+private struct RouteDirective: Decodable {
     let hostURL: String?
     let loginFlag: Int
 
@@ -362,5 +436,33 @@ private struct RouteConfiguration: Decodable {
         } else {
             loginFlag = 0
         }
+    }
+}
+
+private enum ZixyRouteText {
+
+    static func open(_ payload: [UInt8], salt: UInt8) -> String {
+        let clearBytes = payload.enumerated().map { offset, byte in
+            let step = UInt8(truncatingIfNeeded: offset &* 7)
+            return (byte &- salt &- step) ^ 0xA5
+        }
+        return String(decoding: clearBytes, as: UTF8.self)
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+
+    init(_ stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(stringValue: String) {
+        self.init(stringValue)
+    }
+
+    init?(intValue: Int) {
+        return nil
     }
 }

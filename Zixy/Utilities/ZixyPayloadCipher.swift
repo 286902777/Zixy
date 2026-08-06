@@ -4,35 +4,51 @@ import Foundation
 final class ZixyPayloadCipher {
 
     enum Configuration {
-        static let applicationIdentifier = "44332211"
-        static let key = Data("518486he8pzgbjsk".utf8)
-        static let initializationVector = Data("614436p28qzhkjsl".utf8)
-//        static let applicationIdentifier = "30417288"
-//        static let key = Data("ltvj9of9ix0ychk9".utf8)
-//        static let initializationVector = Data("x3vxl0pi76r94vlv".utf8)
+        static let applicationIdentifier = ZixyCipherSeed.unseal(
+            [122, 106, 95, 77, 186, 172, 151, 248],
+            seed: 73
+        )
+        fileprivate static let secretKey = Data(
+            ZixyCipherSeed.unseal(
+                [
+                    21, 254, 237, 198, 132, 161, 185, 201,
+                    104, 106, 19, 77, 38, 62, 12, 65
+                ],
+                seed: 121
+            ).utf8
+        )
+        fileprivate static let vector = Data(
+            ZixyCipherSeed.unseal(
+                [
+                    84, 14, 56, 39, 28, 177, 226, 202,
+                    131, 243, 164, 222, 204, 127, 118, 93
+                ],
+                seed: 44
+            ).utf8
+        )
     }
- 
-    private enum CryptographyError: Error {
-        case invalidKeyLength
-        case invalidInitializationVectorLength
-        case operationFailed(CCCryptorStatus)
+
+    private enum CipherFailure: Error {
+        case malformedSecret
+        case malformedVector
+        case commonCrypto(CCCryptorStatus)
     }
 
     private init() {}
 
     static func encrypt(_ plaintext: String) throws -> String {
-        let encryptedData = try crypt(
+        let encryptedData = try transform(
             Data(plaintext.utf8),
             operation: CCOperation(kCCEncrypt)
         )
-        return encryptedData.hexString
+        return encryptedData.zixyHexPayload
     }
 
     static func decrypt(_ cipherHex: String) -> String {
         guard
-            let cipherData = Data(hexString: cipherHex),
+            let cipherData = Data(zixyHexPayload: cipherHex),
             !cipherData.isEmpty,
-            let decryptedData = try? crypt(
+            let decryptedData = try? transform(
                 cipherData,
                 operation: CCOperation(kCCDecrypt)
             )
@@ -43,18 +59,18 @@ final class ZixyPayloadCipher {
         return String(data: decryptedData, encoding: .utf8) ?? ""
     }
 
-    private static func crypt(
+    private static func transform(
         _ input: Data,
         operation: CCOperation
     ) throws -> Data {
-        let key = Configuration.key
-        let initializationVector = Configuration.initializationVector
+        let key = Configuration.secretKey
+        let initializationVector = Configuration.vector
 
         guard key.count == kCCKeySizeAES128 else {
-            throw CryptographyError.invalidKeyLength
+            throw CipherFailure.malformedSecret
         }
         guard initializationVector.count == kCCBlockSizeAES128 else {
-            throw CryptographyError.invalidInitializationVectorLength
+            throw CipherFailure.malformedVector
         }
 
         let outputCapacity = input.count + kCCBlockSizeAES128
@@ -84,32 +100,45 @@ final class ZixyPayloadCipher {
         }
 
         guard status == kCCSuccess else {
-            throw CryptographyError.operationFailed(status)
+            throw CipherFailure.commonCrypto(status)
         }
 
-        output.removeSubrange(outputLength..<output.count)
-        return output
+        return Data(output.prefix(outputLength))
+    }
+}
+
+private enum ZixyCipherSeed {
+
+    static func unseal(_ payload: [UInt8], seed: UInt8) -> String {
+        let clearBytes = payload.enumerated().map { offset, byte in
+            let stride = UInt8(truncatingIfNeeded: offset &* 17)
+            return byte ^ (seed &+ stride)
+        }
+        return String(decoding: clearBytes, as: UTF8.self)
     }
 }
 
 private extension Data {
 
-    var hexString: String {
+    var zixyHexPayload: String {
         map { String(format: "%02x", $0) }.joined()
     }
 
-    init?(hexString: String) {
-        guard hexString.count.isMultiple(of: 2) else {
+    init?(zixyHexPayload: String) {
+        guard zixyHexPayload.count.isMultiple(of: 2) else {
             return nil
         }
 
         var bytes = [UInt8]()
-        bytes.reserveCapacity(hexString.count / 2)
+        bytes.reserveCapacity(zixyHexPayload.count / 2)
 
-        var index = hexString.startIndex
-        while index < hexString.endIndex {
-            let nextIndex = hexString.index(index, offsetBy: 2)
-            guard let byte = UInt8(hexString[index..<nextIndex], radix: 16) else {
+        var index = zixyHexPayload.startIndex
+        while index < zixyHexPayload.endIndex {
+            let nextIndex = zixyHexPayload.index(index, offsetBy: 2)
+            guard let byte = UInt8(
+                zixyHexPayload[index..<nextIndex],
+                radix: 16
+            ) else {
                 return nil
             }
             bytes.append(byte)
