@@ -310,7 +310,7 @@ final class ZixyInteractiveWebController: UIViewController {
         }
         let allowedSchemes: Set<String> = [
             "http", "https", "mailto", "tel", "sms",
-            "itms-apps", "itms-services", "upi", "phonepe",
+            "itms-apps", "upi", "phonepe",
             "paytm", "paytmmp", "gpay"
         ]
         return allowedSchemes.contains(scheme)

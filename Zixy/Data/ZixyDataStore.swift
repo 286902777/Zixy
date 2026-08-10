@@ -189,8 +189,11 @@ final class ZixyDataStore {
     static let shared = ZixyDataStore()
     private static let defaultRoomMessageAccount =
         "zixy_room_default_messages"
-    private static let legacyElenaEmail = "elena@gmail.com"
-    private static let elenaEmail = "ena_test@gmail.com"
+    private static let legacyElenaEmails = [
+        "ena_test@gmail.com",
+        "elena@gmail.com"
+    ]
+    private static let elenaEmail = "test@gmail.com"
 
     private enum Entity {
         static let user = "ZixyUser"
@@ -1158,13 +1161,17 @@ final class ZixyDataStore {
     }
 
     private func migrateElenaEmailIfNeeded() throws {
-        let oldEmail = Self.legacyElenaEmail
         let newEmail = Self.elenaEmail
-        guard let elena = fetchUser(email: oldEmail) else {
+        guard fetchUser(email: newEmail) == nil else {
             return
         }
-        guard fetchUser(email: newEmail) == nil else {
-            throw ZixyDataStoreError.duplicateEmail
+        guard
+            let oldEmail = Self.legacyElenaEmails.first(where: {
+                fetchUser(email: $0) != nil
+            }),
+            let elena = fetchUser(email: oldEmail)
+        else {
+            return
         }
 
         let legacyBalance = ZixyCoinBalanceStore.balance(for: oldEmail)
