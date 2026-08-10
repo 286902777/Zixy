@@ -31,8 +31,14 @@ final class ZixyInteractiveWebController: UIViewController {
     private var destination: URL?
     private var navigationBeganAt: Date?
     private var didPublishFirstOutcome = false
+    private var hasStartedFirstNavigation = false
+    private var hasReceivedFirstNavigationOutcome = false
+    private var hasPendingDestinationReplacement = false
+    private var firstNavigationLoadingStartedAt: Date?
+    private var firstNavigationResolutionTask: Task<Void, Never>?
     private var privacyIsActive = false
     private var hasRequestedPushRegistration = false
+    private var isExitInProgress = false
     private var pendingCommerceIntent: CommerceIntent?
     private var productsRequest: SKProductsRequest?
     private var paymentReportTask: Task<Void, Never>?
@@ -42,6 +48,15 @@ final class ZixyInteractiveWebController: UIViewController {
     private var isPurchaseInProgress = false
 
     private let purchaseLoadingOverlay = ZixyLoadingOverlay()
+    private let firstNavigationLoadingOverlay = ZixyLoadingOverlay()
+    private let launchCoverView: UIImageView = {
+        let imageView = UIImageView(image: ZixyImageLibrary.launchBackground)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.isUserInteractionEnabled = false
+        return imageView
+    }()
     private let secureContentView: ZixySecureContentView = {
         let secureView = ZixySecureContentView()
         secureView.translatesAutoresizingMaskIntoConstraints = false
@@ -100,7 +115,7 @@ final class ZixyInteractiveWebController: UIViewController {
         mountInterface()
         pendingCommerceIntent = Self.loadPendingCommerceIntent()
         SKPaymentQueue.default().add(self)
-        navigateToDestination()
+        firstNavigationLoadingOverlay.show(message: "Loading...")
     }
 
     private func assembleBrowser() -> WKWebView {
@@ -136,6 +151,7 @@ final class ZixyInteractiveWebController: UIViewController {
         ZixyRuntimeContext.shared.updateLoginState(true)
         enablePrivacyIfNeeded()
         requestPushRegistrationIfNeeded()
+        startPendingNavigationIfVisible()
     }
 
     private func requestPushRegistrationIfNeeded() {
@@ -219,7 +235,8 @@ final class ZixyInteractiveWebController: UIViewController {
         )
         view.addGestureRecognizer(browserBackGesture)
         view.addSubview(secureContentView)
-        [browser, purchaseLoadingOverlay]
+        [browser, launchCoverView, firstNavigationLoadingOverlay,
+         purchaseLoadingOverlay]
             .forEach(secureContentView.contentView.addSubview)
 
         NSLayoutConstraint.activate([
@@ -237,6 +254,30 @@ final class ZixyInteractiveWebController: UIViewController {
                 equalTo: secureContentView.contentView.trailingAnchor
             ),
             browser.bottomAnchor.constraint(
+                equalTo: secureContentView.contentView.bottomAnchor
+            ),
+            launchCoverView.topAnchor.constraint(
+                equalTo: secureContentView.contentView.topAnchor
+            ),
+            launchCoverView.leadingAnchor.constraint(
+                equalTo: secureContentView.contentView.leadingAnchor
+            ),
+            launchCoverView.trailingAnchor.constraint(
+                equalTo: secureContentView.contentView.trailingAnchor
+            ),
+            launchCoverView.bottomAnchor.constraint(
+                equalTo: secureContentView.contentView.bottomAnchor
+            ),
+            firstNavigationLoadingOverlay.topAnchor.constraint(
+                equalTo: secureContentView.contentView.topAnchor
+            ),
+            firstNavigationLoadingOverlay.leadingAnchor.constraint(
+                equalTo: secureContentView.contentView.leadingAnchor
+            ),
+            firstNavigationLoadingOverlay.trailingAnchor.constraint(
+                equalTo: secureContentView.contentView.trailingAnchor
+            ),
+            firstNavigationLoadingOverlay.bottomAnchor.constraint(
                 equalTo: secureContentView.contentView.bottomAnchor
             ),
             purchaseLoadingOverlay.topAnchor.constraint(
@@ -271,12 +312,22 @@ final class ZixyInteractiveWebController: UIViewController {
         if let target {
             destination = target
         }
+        guard hasStartedFirstNavigation else {
+            startPendingNavigationIfVisible()
+            return
+        }
+        guard viewIfLoaded?.window != nil else {
+            hasPendingDestinationReplacement = true
+            return
+        }
+        hasPendingDestinationReplacement = false
         navigateToDestination()
     }
 
     private func displayNavigationFailure() {
-        publishFirstOutcome(false)
-        if viewIfLoaded?.window != nil {
+        if !didPublishFirstOutcome {
+            resolveFirstNavigation(succeeded: false)
+        } else if viewIfLoaded?.window != nil {
             showToast("Unable to load this page.")
         }
     }
@@ -297,11 +348,76 @@ final class ZixyInteractiveWebController: UIViewController {
     }
 
     private func navigateToDestination() {
+        guard viewIfLoaded?.window != nil else {
+            hasPendingDestinationReplacement = hasStartedFirstNavigation
+            return
+        }
         guard let endpoint = resolveEndpoint() else {
             displayNavigationFailure()
             return
         }
         browser.load(URLRequest(url: endpoint))
+    }
+
+    private func startPendingNavigationIfVisible() {
+        guard viewIfLoaded?.window != nil else {
+            return
+        }
+
+        view.layoutIfNeeded()
+        secureContentView.layoutIfNeeded()
+        guard browser.bounds.width > 0, browser.bounds.height > 0 else {
+            DispatchQueue.main.async { [weak self] in
+                self?.startPendingNavigationIfVisible()
+            }
+            return
+        }
+
+        if !hasStartedFirstNavigation {
+            hasStartedFirstNavigation = true
+            firstNavigationLoadingStartedAt = Date()
+            navigateToDestination()
+        } else if hasPendingDestinationReplacement {
+            hasPendingDestinationReplacement = false
+            navigateToDestination()
+        }
+    }
+
+    private func resolveFirstNavigation(succeeded: Bool) {
+        guard !hasReceivedFirstNavigationOutcome else {
+            return
+        }
+        hasReceivedFirstNavigationOutcome = true
+        firstNavigationResolutionTask?.cancel()
+        firstNavigationResolutionTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            if let firstNavigationLoadingStartedAt {
+                let elapsed = Date().timeIntervalSince(
+                    firstNavigationLoadingStartedAt
+                )
+                if elapsed < 1 {
+                    try? await Task.sleep(
+                        nanoseconds: UInt64((1 - elapsed) * 1_000_000_000)
+                    )
+                }
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+
+            firstNavigationLoadingOverlay.hide()
+            if succeeded {
+                launchCoverView.isHidden = true
+                UserDefaults.standard.set(
+                    true,
+                    forKey: PortalPreference.openedOnce
+                )
+            }
+            publishFirstOutcome(succeeded)
+            firstNavigationResolutionTask = nil
+        }
     }
 
     private func acceptsExternalTarget(_ target: URL) -> Bool {
@@ -578,8 +694,23 @@ final class ZixyInteractiveWebController: UIViewController {
     }
 
     private func exitExperience() {
-        guard !isPurchaseInProgress else {
-            showToast("Please wait for the purchase to finish.")
+        guard !isPurchaseInProgress, !isExitInProgress else {
+            if isPurchaseInProgress {
+                showToast("Please wait for the purchase to finish.")
+            }
+            return
+        }
+        isExitInProgress = true
+        browser.stopLoading()
+        browser.evaluateJavaScript(Self.mediaTeardownScript) { [weak self] _, _ in
+            Task { @MainActor in
+                self?.completeExitExperience()
+            }
+        }
+    }
+
+    private func completeExitExperience() {
+        guard isExitInProgress else {
             return
         }
         ZixyRuntimeContext.shared.updateLoginState(false)
@@ -593,6 +724,38 @@ final class ZixyInteractiveWebController: UIViewController {
             dismiss(animated: true)
         }
     }
+
+    private static let mediaTeardownScript = """
+    (() => {
+      window.dispatchEvent(new Event('zixyNativeWillClose'));
+      document.querySelectorAll('video, audio').forEach((element) => {
+        const stream = element.srcObject;
+        if (stream && typeof stream.getTracks === 'function') {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        if (typeof element.pause === 'function') {
+          element.pause();
+        }
+        element.srcObject = null;
+      });
+      [window.zixyPeerConnections, window.__zixyPeerConnections]
+        .forEach((connections) => {
+          if (!connections) { return; }
+          const values = typeof connections.values === 'function'
+            ? Array.from(connections.values())
+            : Array.from(connections);
+          values.forEach((connection) => {
+            if (connection && typeof connection.close === 'function') {
+              connection.close();
+            }
+          });
+          if (typeof connections.clear === 'function') {
+            connections.clear();
+          }
+        });
+      return true;
+    })();
+    """
 
     @objc private func handleBrowserBackGesture(
         _ gesture: UIScreenEdgePanGestureRecognizer
@@ -610,6 +773,10 @@ final class ZixyInteractiveWebController: UIViewController {
             productsRequest?.cancel()
             paymentReportTask?.cancel()
             purchaseCompletionTask?.cancel()
+            firstNavigationResolutionTask?.cancel()
+            browser.stopLoading()
+            browser.navigationDelegate = nil
+            browser.uiDelegate = nil
             SKPaymentQueue.default().remove(self)
             SignalChannel.registered.forEach {
                 messageHub.removeScriptMessageHandler(forName: $0)
@@ -719,7 +886,12 @@ extension ZixyInteractiveWebController: WKUIDelegate {
         }
 
         if ["http", "https"].contains(target.scheme?.lowercased() ?? "") {
-            webView.load(URLRequest(url: target))
+            if viewIfLoaded?.window != nil {
+                webView.load(URLRequest(url: target))
+            } else {
+                destination = target
+                hasPendingDestinationReplacement = true
+            }
         } else {
             openOutsideApplication(target)
         }
@@ -761,8 +933,9 @@ extension ZixyInteractiveWebController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
-        publishFirstOutcome(true)
-        UserDefaults.standard.set(true, forKey: PortalPreference.openedOnce)
+        if !didPublishFirstOutcome {
+            resolveFirstNavigation(succeeded: true)
+        }
     }
 
     func webView(
@@ -777,6 +950,9 @@ extension ZixyInteractiveWebController: WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation?,
         withError error: Error
     ) {
+        guard (error as? URLError)?.code != .cancelled else {
+            return
+        }
         displayNavigationFailure()
     }
 
@@ -785,6 +961,9 @@ extension ZixyInteractiveWebController: WKNavigationDelegate {
         didFail navigation: WKNavigation?,
         withError error: Error
     ) {
+        guard (error as? URLError)?.code != .cancelled else {
+            return
+        }
         displayNavigationFailure()
     }
 }

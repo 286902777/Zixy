@@ -58,7 +58,7 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
             return
         }
         beginPortalOperation(message: "Loading...")
-        preloadPortal(at: portalURL)
+        presentPortal(at: portalURL)
     }
 
     private func configureBackground() {
@@ -148,7 +148,7 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
             }
 
             if succeeded, let portalURL = makeLoginPortalURL() {
-                preloadPortal(at: portalURL)
+                presentPortal(at: portalURL)
             } else {
                 finishAutomaticLogin()
                 if succeeded {
@@ -202,7 +202,7 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
         return components.url
     }
 
-    private func preloadPortal(at url: URL) {
+    private func presentPortal(at url: URL) {
         guard
             presentedViewController == nil,
             pendingWebController == nil
@@ -224,34 +224,10 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
             }
 
             controller.didResolveFirstNavigation = nil
-            resolvePreloadedPortal(controller, succeeded: succeeded)
+            resolvePresentedPortal(controller, succeeded: succeeded)
         }
-        controller.loadViewIfNeeded()
-    }
-
-    private func resolvePreloadedPortal(
-        _ controller: ZixyInteractiveWebController,
-        succeeded: Bool
-    ) {
-        loginTask = Task { [weak self, weak controller] in
-            guard let self, let controller else {
-                return
-            }
-            await waitForMinimumLoadingDuration()
-            guard
-                !Task.isCancelled,
-                pendingWebController === controller
-            else {
-                return
-            }
-
-            guard succeeded else {
-                finishAutomaticLogin()
-                showToast("Unable to open the account page.")
-                return
-            }
-            presentLoadedPortal(controller)
-        }
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: false)
     }
 
     private func beginPortalOperation(message: String) {
@@ -273,18 +249,21 @@ final class ZixyAccountGatewayController: ZixyAuthCanvasController {
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
     }
 
-    private func presentLoadedPortal(
-        _ controller: ZixyInteractiveWebController
+    private func resolvePresentedPortal(
+        _ controller: ZixyInteractiveWebController,
+        succeeded: Bool
     ) {
-        guard presentedViewController == nil else {
-            finishAutomaticLogin()
+        finishAutomaticLogin()
+        guard !succeeded else {
+            return
+        }
+        ZixyRuntimeContext.shared.updateLoginState(false)
+        guard presentedViewController === controller else {
             showToast("Unable to open the account page.")
             return
         }
-
-        controller.modalPresentationStyle = .fullScreen
-        present(controller, animated: false) { [weak self] in
-            self?.finishAutomaticLogin()
+        dismiss(animated: false) { [weak self] in
+            self?.showToast("Unable to open the account page.")
         }
     }
 

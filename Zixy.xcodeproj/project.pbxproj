@@ -161,7 +161,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zixy/Zixy.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 6NUFR97X3A;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zixy/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Zixy needs access to your camera so you can join video calls, capture photos or videos of your handicrafts, and update your profile picture.";
@@ -178,7 +178,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zixy.imCraftsWorkers;
+				PRODUCT_BUNDLE_IDENTIFIER = app.myfy.test;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -202,7 +202,7 @@
 				CODE_SIGN_ENTITLEMENTS = Zixy/Zixy.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 6NUFR97X3A;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zixy/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Zixy needs access to your camera so you can join video calls, capture photos or videos of your handicrafts, and update your profile picture.";
@@ -219,7 +219,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zixy.imCraftsWorkers;
+				PRODUCT_BUNDLE_IDENTIFIER = app.myfy.test;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

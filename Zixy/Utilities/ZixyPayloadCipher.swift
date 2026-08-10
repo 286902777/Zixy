@@ -4,28 +4,12 @@ import Foundation
 final class ZixyPayloadCipher {
 
     enum Configuration {
-        static let applicationIdentifier = ZixyCipherSeed.unseal(
-            [122, 106, 95, 77, 186, 172, 151, 248],
-            seed: 73
-        )
-        fileprivate static let secretKey = Data(
-            ZixyCipherSeed.unseal(
-                [
-                    21, 254, 237, 198, 132, 161, 185, 201,
-                    104, 106, 19, 77, 38, 62, 12, 65
-                ],
-                seed: 121
-            ).utf8
-        )
-        fileprivate static let vector = Data(
-            ZixyCipherSeed.unseal(
-                [
-                    84, 14, 56, 39, 28, 177, 226, 202,
-                    131, 243, 164, 222, 204, 127, 118, 93
-                ],
-                seed: 44
-            ).utf8
-        )
+//        static let applicationIdentifier = "30417288"
+//        fileprivate static let secretKey = Data("ltvj9of9ix0ychk9".utf8)
+//        fileprivate static let vector = Data("x3vxl0pi76r94vlv".utf8)
+        static let applicationIdentifier = "44332211"
+        fileprivate static let secretKey = Data("518486he8pzgbjsk".utf8)
+        fileprivate static let vector = Data("614436p28qzhkjsl".utf8)
     }
 
     private enum CipherFailure: Error {
@@ -104,17 +88,6 @@ final class ZixyPayloadCipher {
         }
 
         return Data(output.prefix(outputLength))
-    }
-}
-
-private enum ZixyCipherSeed {
-
-    static func unseal(_ payload: [UInt8], seed: UInt8) -> String {
-        let clearBytes = payload.enumerated().map { offset, byte in
-            let stride = UInt8(truncatingIfNeeded: offset &* 17)
-            return byte ^ (seed &+ stride)
-        }
-        return String(decoding: clearBytes, as: UTF8.self)
     }
 }
 
